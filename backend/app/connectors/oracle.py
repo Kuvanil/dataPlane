@@ -1,0 +1,128 @@
+"""
+Oracle Database Connector.
+
+Uses oracledb (the successor to cx_Oracle) when a real Oracle instance is available.
+Falls back to SQLite simulation with Oracle-style naming for demo environments
+where no Oracle DB is present.
+"""
+
+from typing import List, Dict, Any
+from .base import BaseConnector
+
+
+class OracleConnector(BaseConnector):
+    """
+    Connector for Oracle Database.
+    In demo mode (dsn starts with 'sim://'), uses an internal SQLite file
+    to simulate Oracle schema introspection.
+    """
+
+    def __init__(self, host: str, port: int, service_name: str, user: str, password: str):
+        self.host = host
+        self.port = int(port)
+        self.service_name = service_name
+        self.user = user
+        self.password = password
+        self.conn = None
+        self._sim_mode = host.startswith("sim://") or host == "localhost-sim"
+
+    # ── Connection ──────────────────────────────────────────────
+
+    def connect(self):
+        if self.conn:
+            return self.conn
+
+        if self._sim_mode:
+            import sqlite3, os
+            os.makedirs("/shared/data", exist_ok=True)
+            db_path = f"/shared/data/dataplane_oracle_sim_{self.service_name}.db"
+            self.conn = sqlite3.connect(db_path)
+            self.conn.row_factory = sqlite3.Row
+            return self.conn
+
+        try:
+            import oracledb
+            dsn = oracledb.makedsn(self.host, self.port, service_name=self.service_name)
+            self.conn = oracledb.connect(user=self.user, password=self.password, dsn=dsn)
+            return self.conn
+        except Exception as exc:
+            raise ConnectionError(f"Oracle connection failed: {exc}")
+
+    def test_connection(self) -> bool:
+        try:
+            conn = self.connect()
+            cur = conn.cursor()
+            cur.execute("SELECT 1" + (" FROM DUAL" if not self._sim_mode else ""))
+            return cur.fetchone()[0] == 1
+        except Exception:
+            return False
+
+    # ── Schema Introspection ────────────────────────────────────
+
+    def get_tables(self) -> List[str]:
+        conn = self.connect()
+        cur = conn.cursor()
+        if self._sim_mode:
+            cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+            return [r[0] if isinstance(r, tuple) else r["name"] for r in cur.fetchall()]
+        else:
+            cur.execute("""
+                SELECT table_name FROM all_tables
+                WHERE owner = UPPER(:owner)
+                ORDER BY table_name
+            """, {"owner": self.user})
+            return [r[0] for r in cur.fetchall()]
+
+    def get_table_schema(self, table_name: str) -> List[Dict[str, Any]]:
+        conn = self.connect()
+        cur = conn.cursor()
+
+        if self._sim_mode:
+            cur.execute(f"PRAGMA table_info({table_name})")
+            rows = cur.fetchall()
+            return [
+                {
+                    "name": r["name"] if isinstance(r, dict) else r[1],
+                    "type": r["type"] if isinstance(r, dict) else r[2],
+                    "nullable": (r["notnull"] if isinstance(r, dict) else r[3]) == 0,
+                    "primary_key": (r["pk"] if isinstance(r, dict) else r[5]) == 1,
+                }
+                for r in rows
+            ]
+
+        cur.execute("""
+            SELECT column_name AS name,
+                   data_type   AS type,
+                   nullable
+            FROM all_tab_columns
+            WHERE owner      = UPPER(:owner)
+              AND table_name  = UPPER(:tbl)
+            ORDER BY column_id
+        """, {"owner": self.user, "tbl": table_name})
+        cols = cur.fetchall()
+        desc = [d[0].lower() for d in cur.description]
+        schema = []
+        for row in cols:
+            rd = dict(zip(desc, row))
+            schema.append({
+                "name": rd["name"],
+                "type": rd["type"],
+                "nullable": rd["nullable"] == "Y",
+                "primary_key": False,
+            })
+        return schema
+
+    def execute_query(self, sql: str) -> List[Dict[str, Any]]:
+        conn = self.connect()
+        cur = conn.cursor()
+        cur.execute(sql)
+        if self._sim_mode:
+            keys = [d[0] for d in cur.description] if cur.description else []
+            return [dict(zip(keys, row)) for row in cur.fetchall()]
+        desc = [d[0].lower() for d in cur.description]
+        return [dict(zip(desc, row)) for row in cur.fetchall()]
+
+    def close(self):
+        if self.conn:
+            self.conn.close()
+            self.conn = None

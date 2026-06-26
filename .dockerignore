@@ -1,0 +1,30 @@
+.git
+.gitignore
+*.md
+!README.md
+docs/
+.gemini/
+.agents/
+.agent/
+_agents/
+_agent/
+
+# Frontend build artifacts (we rebuild in Docker)
+frontend/node_modules
+frontend/.next
+
+# Python cache
+__pycache__
+*.pyc
+*.pyo
+.pytest_cache
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db

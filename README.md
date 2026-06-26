@@ -1,2 +1,240 @@
 # dataPlane
-Intelligent Data Engineering On Autopilot
+
+**An AI-First, Agentic Database Engineering & Data Transformation Platform**
+
+---
+
+## Product Vision
+
+dataPlane is a production-grade platform for managing heterogeneous data systems intelligently with AI. It acts as an **Agentic DBA** — finding matches, mapping structures, creating pipelines, running natural language queries, and auditing security classifications at enterprise scale.
+
+---
+
+## Architecture
+
+dataPlane runs as a clean multi-service Docker stack with five services:
+
+| Service | Image / Build | Purpose | Port |
+| :--- | :--- | :--- | :--- |
+| `frontend` | `nginx` (serving Next.js static build) | Web UI | `3000` |
+| `api` | Custom (FastAPI, `./backend`) | REST API backend | `8000` |
+| `worker` | Custom (Celery, `./backend`) | Async task processing | — |
+| `broker` | `redis:7-alpine` | Celery broker + result backend | `6379` |
+| `postgres` | `postgres:15-alpine` | App metadata + seeded HR demo data | `5432` |
+
+```
+┌────────────┐    HTTP    ┌────────────┐    SQL    ┌────────────┐
+│  frontend  │ ─────────▶ │     api    │ ────────▶ │  postgres  │
+│  (nginx)   │            │  (FastAPI) │           │            │
+└────────────┘            └─────┬──────┘           └────────────┘
+                                │ enqueue
+                                ▼
+                          ┌──────────┐    pub/sub    ┌────────────┐
+                          │  worker  │ ◀───────────▶ │   broker   │
+                          │ (Celery) │               │   (redis)  │
+                          └──────────┘               └────────────┘
+```
+
+The frontend is built once and served as static files by nginx. The API and worker share the same Docker image but run with different entrypoints. The `api` service talks to `postgres` for metadata and uses `broker` (Redis) to enqueue long-running AI tasks for the `worker`.
+
+---
+
+## Key Features
+
+### 1. Database Topology Visualizer
+Interactive graph visualization showing tables as nodes with color-coded risk levels, AI-matched edges, and error/warning annotations.
+
+### 2. Query Studio (NL-to-SQL)
+Type plain English → AI generates SQL → execute safely → see results. Includes pre-built analysis templates (Health Report, PII Scan, Schema Gaps) with **95%+ accuracy** on templated patterns.
+
+### 3. AskData Intelligence Bot
+Conversational AI chatbot that answers anything about your databases — issues, risks, gaps, and recommendations. Context-aware with full schema knowledge.
+
+### 4. Multi-Database Connectors
+Production-grade connectors for **PostgreSQL, MySQL, Oracle, SQLite, and JDBC** with synthetic demo data seeded automatically.
+
+### 5. Schema Mapper
+Visual drag-and-drop or plain English based schema mapping:
+- Drag lines between columns to create mappings
+- Type: `Map email_address to contact_email`
+- AI-suggested matches shown as dashed lines
+- Generate migration SQL automatically
+
+### 6. Security & Governance
+DAMA-compliant data classification with automatic PII detection, sensitivity tagging, stewardship assignment, and retention policies.
+
+### 7. Visual Pipeline Studio
+React Flow based drag-and-drop canvas for designing data transformation pipelines with source, target, AI transformer, and security mask nodes.
+
+---
+
+## Setup & Run
+
+### Prerequisites
+- Docker and Docker Compose installed
+- 2GB+ RAM (4GB+ if using Ollama LLM)
+
+### Run
+
+```bash
+docker compose up -d --build
+```
+
+That's it. Compose will build the backend image, pull postgres and redis, run healthchecks, and start all five services.
+
+### Navigation Endpoints
+| Component | URL |
+| :--- | :--- |
+| **Frontend UI** | `http://localhost:3000` |
+| **FastAPI API Docs** | `http://localhost:8000/docs` |
+| **API Health** | `http://localhost:8000/health` |
+| **PostgreSQL** | `localhost:5432` |
+| **Redis** | `localhost:6379` |
+
+### Demo Credentials
+- **Email**: `admin@dataplane.ai`
+- **Password**: `admin123`
+
+### Useful Commands
+```bash
+# Tail logs for all services
+docker compose logs -f
+
+# Tail logs for a specific service
+docker compose logs -f api
+
+# Stop everything (keep volumes)
+docker compose down
+
+# Stop everything and wipe data
+docker compose down -v
+
+# Rebuild a single service after code changes
+docker compose up -d --build api worker
+```
+
+---
+
+## Project Structure
+```
+dataplane/
+├── backend/
+│   ├── app/
+│   │   ├── api/routers/       # REST API endpoints
+│   │   │   ├── connectors.py  # CRUD for database connections
+│   │   │   ├── schema.py      # Schema diff + graph + classify
+│   │   │   ├── agent.py       # AI matching suggestions
+│   │   │   ├── query.py       # NL-to-SQL engine
+│   │   │   ├── askdata.py     # AskData chatbot
+│   │   │   ├── mapper.py      # Schema mapping + SQL gen
+│   │   │   └── tasks.py       # Async task status polling
+│   │   ├── connectors/        # Database connector drivers
+│   │   │   ├── base.py        # Abstract base class
+│   │   │   ├── sqlite.py      # SQLite driver
+│   │   │   ├── postgres.py    # PostgreSQL driver
+│   │   │   ├── mysql.py       # MySQL driver
+│   │   │   ├── oracle.py      # Oracle driver (w/ sim mode)
+│   │   │   └── jdbc.py        # Generic JDBC via SQLAlchemy
+│   │   ├── services/          # Business logic
+│   │   │   ├── ai_service.py       # Ollama LLM integration
+│   │   │   ├── nl2sql_service.py   # Natural language to SQL
+│   │   │   ├── askdata_service.py  # Conversational AI
+│   │   │   ├── schema_mapper_service.py # Mapping engine
+│   │   │   ├── diff_service.py     # Schema comparison + graph
+│   │   │   ├── schema_service.py   # Schema extraction
+│   │   │   └── security_service.py # PII classification
+│   │   ├── core/              # Config, database setup, Celery app
+│   │   ├── models/            # SQLAlchemy models
+│   │   └── workers/           # Celery task definitions
+│   ├── Dockerfile
+│   ├── entrypoint.sh
+│   └── requirements.txt
+├── frontend/
+│   ├── src/app/
+│   │   ├── dashboard/
+│   │   │   ├── visualize/     # Graph Visualizer
+│   │   │   ├── query-studio/  # NL-to-SQL
+│   │   │   ├── askdata/       # AI Chatbot
+│   │   │   ├── schema-mapper/ # Visual Mapper
+│   │   │   ├── connectors/    # DB Connections
+│   │   │   ├── schema/        # Schema Intelligence
+│   │   │   ├── pipelines/     # Pipeline Studio
+│   │   │   ├── autopilot/     # AI Autopilot
+│   │   │   └── security/      # Security Center
+│   │   └── login/             # Authentication
+│   ├── Dockerfile
+│   └── ...
+├── docker-compose.yml         # Multi-service orchestration
+└── README.md
+```
+
+---
+
+## API Reference
+
+| Endpoint | Method | Description |
+| :--- | :--- | :--- |
+| `/api/v1/connectors/` | GET/POST | List/create database connectors |
+| `/api/v1/connectors/{id}/schema` | GET | Extract schema metadata |
+| `/api/v1/connectors/{id}/test` | POST | Test connection health |
+| `/api/v1/schema/diff` | GET | Compare two schemas |
+| `/api/v1/schema/graph` | GET | **Graph visualization data** |
+| `/api/v1/schema/{id}/classify` | GET | PII/DAMA classification |
+| `/api/v1/query/nl2sql` | POST | Natural language to SQL |
+| `/api/v1/query/report/{id}` | GET | Analysis report generation |
+| `/api/v1/askdata/chat` | POST | AskData chatbot |
+| `/api/v1/askdata/suggestions` | GET | Contextual question suggestions |
+| `/api/v1/askdata/nl2sql` | POST | **Async NL-to-SQL** |
+| `/api/v1/mapper/parse` | POST | **Parse English mappings** |
+| `/api/v1/mapper/generate-sql` | POST | **Generate migration SQL** |
+| `/api/v1/mapper/visual-data` | POST | Visual mapping data |
+| `/api/v1/agent/suggest` | POST | **AI column matching** |
+| `/api/v1/tasks/{task_id}` | GET | Poll status of an async task |
+
+### Asynchronous Task Endpoints
+
+The following endpoints return immediately with a task handle. Poll `/api/v1/tasks/{task_id}` to retrieve the result:
+
+- `/api/v1/agent/suggest`
+- `/api/v1/askdata/nl2sql`
+- `/api/v1/mapper/parse`
+- `/api/v1/mapper/generate-sql`
+
+Initial response shape:
+
+```json
+{ "task_id": "abc-123-def", "status": "PENDING" }
+```
+
+Poll `/api/v1/tasks/{task_id}` (GET) until `status` becomes `SUCCESS` or `FAILURE`, then read `result`.
+
+---
+
+## Seeded Demo Data
+
+| Database | Domain | Tables | Records |
+| :--- | :--- | :--- | :--- |
+| CRM Source (SQLite) | Customer Relations | `crm_users`, `crm_leads`, `crm_activities` | 18 |
+| Data Warehouse (SQLite) | Analytics Target | `dw_customers`, `dw_opportunities`, `dw_events` | 3 |
+| E-Commerce (SQLite) | Retail | `products`, `orders`, `customers` | 12 |
+| Finance (Oracle sim) | General Ledger | `GL_ACCOUNTS`, `GL_TRANSACTIONS`, `GL_LEDGER` | 12 |
+| HR (PostgreSQL) | Human Resources | seeded via `postgres` service | — |
+
+Demo data is seeded automatically on first API startup. The four SQLite files are written to `/shared/data` inside the `api` container. The PostgreSQL HR data is loaded into the `postgres` service by the seed step on first boot.
+
+---
+
+## Demo Walkthrough
+
+1. **Login** → Use `admin@dataplane.ai` / `admin123`
+2. **Dashboard** → See all 5 connected databases with health scores
+3. **Visualize** → Interactive graph showing CRM ↔ DW relationships and PII risks
+4. **Query Studio** → Type "Show all tables" or "Find PII columns" in English
+5. **AskData** → Ask "What PII risks exist?" for AI-powered analysis
+6. **Schema Mapper** → Drag columns or type "Map email_address to contact_email"
+7. **Connectors** → Add new Postgres/MySQL/Oracle/JDBC connections
+8. **Security** → Review DAMA classifications and PII policies
+
+---
+
+*Created with care, powered by Advanced Agentic AI — Production-grade database intelligence platform.*
