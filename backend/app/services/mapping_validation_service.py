@@ -40,7 +40,7 @@ def _family(t: Any) -> str:
 
 
 def _is_lossless_widening(src: Any, tgt: Any) -> bool:
-    s, t = _normalize(src), _normalize(t)
+    s, t = _normalize(src), _normalize(tgt)
     if s == "INTEGER" and t == "BIGINT":
         return True
     if _family(s) == "text" and _family(t) == "text":
@@ -55,7 +55,7 @@ def _is_lossless_widening(src: Any, tgt: Any) -> bool:
 
 
 def _is_incompatible(src: Any, tgt: Any) -> bool:
-    s, t = _family(src), _family(t)
+    s, t = _family(src), _family(tgt)
     if s == "text" and t == "int":
         return True
     if s == "text" and t == "float":
@@ -75,7 +75,7 @@ def _has_null_safety(transform: Dict[str, Any]) -> bool:
 
 
 def _is_lossy(src: Any, tgt: Any) -> bool:
-    s, t = _family(src), _family(t)
+    s, t = _family(src), _family(tgt)
     if s == "int" and t == "text":
         return True
     if s == "float" and t == "int":
@@ -113,28 +113,31 @@ class MappingValidationService:
 
         verdict = "ok"
         message = "compatible"
+        has_cast = (transformation or {}).get("kind") == "cast"
         for src in sources:
             src_type = src.get("type") or ""
             if _is_incompatible(src_type, tgt_type):
-                verdict = "blocking"
-                message = (
-                    f"incompatible: cannot map {src_type} to {tgt_type} without cast"
-                )
-                break
-            if _is_lossy(src_type, tgt_type):
-                verdict = "lossy_warning"
-                message = (
-                    f"lossy: mapping {src_type} to {tgt_type} may lose precision"
-                )
+                if not has_cast:
+                    verdict = "blocking"
+                    message = (
+                        f"incompatible: cannot map {src_type} to {tgt_type} "
+                        f"without cast"
+                    )
+                    break
+                # With cast: the incompatibility is resolved; treat as ok.
+            elif _is_lossy(src_type, tgt_type):
+                if not has_cast:
+                    verdict = "blocking"
+                    message = (
+                        f"lossy: mapping {src_type} to {tgt_type} may lose "
+                        f"precision and no CAST transformation supplied"
+                    )
+                # With cast: the cast handles the lossy conversion; ok.
             elif _is_lossless_widening(src_type, tgt_type):
                 pass
             else:
                 # Same family narrow case — treated as ok.
                 pass
-
-        if verdict == "lossy_warning" and transformation.get("kind") != "cast":
-            verdict = "blocking"
-            message = message + " (no CAST transformation supplied)"
 
         # Null-safety: target NOT NULL + nullable source without null-handling.
         if tgt_nullable is False or tgt_nullable == 0:

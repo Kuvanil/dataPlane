@@ -14,8 +14,10 @@ def _edge(target, sources, transformation=None, edge_id=1):
 
 
 def test_same_type_is_ok():
+    # Both sides nullable so the null-safety check doesn't fire — we're
+    # testing pure type-family compatibility here.
     e = _edge(
-        {"type": "TEXT", "nullable": False},
+        {"type": "TEXT", "nullable": True},
         [{"type": "TEXT", "nullable": True}],
     )
     r = MappingValidationService.validate_edge(e)
