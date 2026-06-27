@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import os
+import sys
+import types
 
 import pytest
 from sqlalchemy import create_engine
@@ -14,6 +16,66 @@ os.environ.setdefault("CELERY_BROKER_URL", "memory://")
 os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
 os.environ.setdefault("SECRET_KEY", "test-secret")
 
+
+# ── Optional DB driver stubs ─────────────────────────────────────────────
+# The mapping tests run against SQLite only. Some modules under app.connectors
+# eagerly `import psycopg2` / `pymysql` / `oracledb` at module load time even
+# when those backends are never used. In a slim test env we stub them out (and
+# their sub-modules) so collection succeeds. Real production installs still
+# get the real drivers.
+def _install_driver_stubs() -> None:
+    drivers = ("psycopg2", "pymysql", "oracledb", "mysql", "pgdb")
+    sub_modules = {
+        "psycopg2": ("extras", "pool", "sql", "extensions"),
+        "pymysql": ("connections", "cursors", "err"),
+        "oracledb": ("errors",),
+    }
+    for name in drivers:
+        if name in sys.modules:
+            continue
+        mod = types.ModuleType(name)
+        mod.__path__ = []  # mark as package
+        sys.modules[name] = mod
+        for sub in sub_modules.get(name, ()):
+            full = f"{name}.{sub}"
+            if full not in sys.modules:
+                sys.modules[full] = types.ModuleType(full)
+
+    # Stub the symbols our connectors import from driver sub-modules so
+    # attribute access at import time doesn't blow up if anything ever reaches
+    # them. Real production installs still get the real drivers.
+    class _Stub:  # noqa: D401 - trivial placeholder class
+        pass
+
+    def _add(module_name: str, attrs: dict) -> None:
+        mod = sys.modules.get(module_name)
+        if mod is None:
+            return
+        for k, v in attrs.items():
+            if not hasattr(mod, k):
+                setattr(mod, k, v)
+
+    _add("psycopg2.extras", {
+        "RealDictCursor": _Stub,
+        "NamedTupleCursor": _Stub,
+        "DictCursor": _Stub,
+    })
+    _add("pymysql.cursors", {
+        "DictCursor": _Stub,
+        "Cursor": _Stub,
+        "SSDictCursor": _Stub,
+    })
+    _add("pymysql.connections", {
+        "Connection": _Stub,
+    })
+    _add("oracledb.errors", {
+        "DatabaseError": _Stub,
+        "IntegrityError": _Stub,
+        "OperationalError": _Stub,
+    })
+
+_install_driver_stubs()
+
 from app.core.database import Base  # noqa: E402
 from app.models.connection import DBConnection  # noqa: E402
 from app.models.user import User  # noqa: E402
@@ -22,7 +84,16 @@ from app.services.auth_service import AuthService  # noqa: E402
 
 @pytest.fixture()
 def engine():
-    eng = create_engine("sqlite:///:memory:")
+    # StaticPool + check_same_thread=False lets the in-memory SQLite engine be
+    # shared safely across threads (FastAPI's TestClient runs request handlers
+    # on an asyncio thread pool, not the test thread). This is the canonical
+    # SQLAlchemy pattern for multi-threaded in-memory SQLite.
+    from sqlalchemy.pool import StaticPool
+    eng = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(eng)
     try:
         yield eng

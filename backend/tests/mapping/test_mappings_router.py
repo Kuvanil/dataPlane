@@ -37,9 +37,15 @@ def client_admin(db, admin, monkeypatch):
         schema_service.SchemaService, "get_full_schema",
         staticmethod(_fake_schema),
     )
-    with TestClient(app) as c:
+    # NOTE: We intentionally do NOT use `with TestClient(app)` because the
+    # production lifespan in app.main.py seeds /shared/data on the host
+    # filesystem. Tests run against an in-memory SQLite created by conftest,
+    # so the lifespan is not needed.
+    c = TestClient(app)
+    try:
         yield c
-    app.dependency_overrides.clear()
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.fixture()
@@ -59,9 +65,11 @@ def client_analyst(db, analyst, monkeypatch):
         schema_service.SchemaService, "get_full_schema",
         staticmethod(_fake_schema),
     )
-    with TestClient(app) as c:
+    c = TestClient(app)
+    try:
         yield c
-    app.dependency_overrides.clear()
+    finally:
+        app.dependency_overrides.clear()
 
 
 @pytest.fixture()
@@ -81,9 +89,11 @@ def client_viewer(db, viewer, monkeypatch):
         schema_service.SchemaService, "get_full_schema",
         staticmethod(_fake_schema),
     )
-    with TestClient(app) as c:
+    c = TestClient(app)
+    try:
         yield c
-    app.dependency_overrides.clear()
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_create_mapping_201(client_admin, seeded_connections):
