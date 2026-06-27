@@ -4,8 +4,10 @@ from pydantic import BaseModel
 from typing import Optional, Dict, Any, List
 from app.core.database import get_db
 from app.models.connection import DBConnection
+from app.models.query_history import QueryHistory
 from app.services.schema_service import SchemaService, get_connector
 from app.services.nl2sql_service import NL2SQLService
+from app.services.audit_helper import record_audit
 
 router = APIRouter()
 
@@ -26,8 +28,25 @@ class NL2SQLResponse(BaseModel):
     report_type: Optional[str] = None
 
 
-# ── In-memory query history for demo ──────────────────────────
-_history: List[Dict[str, Any]] = []
+def _persist_query(db: Session, conn, result: Dict[str, Any], req_query: str) -> None:
+    try:
+        db.add(QueryHistory(
+            connection_id=conn.id,
+            connection_name=conn.name,
+            natural_query=req_query,
+            generated_sql=result.get("sql"),
+            method=result.get("method"),
+            confidence=result.get("confidence"),
+            row_count=result.get("row_count"),
+            error=result.get("error"),
+            report_type=result.get("report_type"),
+        ))
+        db.commit()
+    except Exception:
+        try:
+            db.rollback()
+        except Exception:
+            pass
 
 
 @router.post("/nl2sql")
@@ -55,7 +74,10 @@ def nl_to_sql(req: NL2SQLRequest, db: Session = Depends(get_db)):
                 "report_type": result.get("report_type"),
                 "connection": conn.name,
             }
-            _history.insert(0, entry)
+            _persist_query(db, conn, result, req.query)
+            record_audit(db, "query_executed", connection_id=conn.id, connection_name=conn.name,
+                         payload={"query": req.query, "method": result["method"],
+                                  "confidence": result["confidence"], "report_type": result.get("report_type")})
             return entry
 
         # Execute if requested and safe
@@ -77,9 +99,10 @@ def nl_to_sql(req: NL2SQLRequest, db: Session = Depends(get_db)):
             "error": result.get("error"),
             "connection": conn.name,
         }
-        _history.insert(0, entry)
-        if len(_history) > 50:
-            _history.pop()
+        _persist_query(db, conn, result, req.query)
+        record_audit(db, "query_executed", connection_id=conn.id, connection_name=conn.name,
+                     payload={"query": req.query, "sql": result.get("sql"), "method": result["method"],
+                              "confidence": result["confidence"], "row_count": result.get("row_count")})
         return entry
 
     except Exception as e:
@@ -104,6 +127,25 @@ def generate_report(connection_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/history")
-def get_history():
-    """Return recent query history."""
-    return {"history": _history[:20]}
+def get_history(db: Session = Depends(get_db)):
+    """Return recent query history from the database."""
+    rows = (
+        db.query(QueryHistory)
+        .order_by(QueryHistory.created_at.desc())
+        .limit(50)
+        .all()
+    )
+    history = [
+        {
+            "query": r.natural_query,
+            "sql": r.generated_sql,
+            "method": r.method,
+            "confidence": r.confidence,
+            "row_count": r.row_count,
+            "error": r.error,
+            "report_type": r.report_type,
+            "connection": r.connection_name,
+        }
+        for r in rows
+    ]
+    return {"history": history}

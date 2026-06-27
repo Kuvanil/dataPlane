@@ -1,50 +1,31 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { api } from "@/lib/api";
 
-interface Item {
-  column: string;
-  classification: {
-    label: string;
-    level: string;
-    policy: string;
-    color: string;
-    dama_metadata: {
-      data_owner: string;
-      data_steward: string;
-      retention: string;
-    };
-  };
-}
+interface DamaMeta { data_owner: string; data_steward: string; retention: string; }
+interface Classification { label: string; level: string; policy: string; color: string; dama_metadata: DamaMeta; }
+interface Item { column: string; classification: Classification; }
+interface ClassifyResponse { classifications: Record<string, Item[]>; }
+
+const COLOR_MAP: Record<string, string> = {
+  red:   "bg-red-500/10 text-red-500 border-red-500/20",
+  amber: "bg-amber-500/10 text-amber-500 border-amber-500/20",
+  green: "bg-green-500/10 text-green-500 border-green-500/20",
+};
 
 export default function SecurityPage() {
-  const [classifications, setClassifications] = useState<any>({});
+  const [classifications, setClassifications] = useState<Record<string, Item[]>>({});
   const [loading, setLoading] = useState(true);
 
-  const fetchClassify = async () => {
-    try {
-      // Connect to the seeded ID 1 (CRM_Source_Analytics)
-      const res = await fetch("http://localhost:8000/api/v1/schema/1/classify");
-      if (res.ok) {
-        const data = await res.json();
-        setClassifications(data.classifications || {});
-      }
-    } catch (err) {
-      console.error("Failed to fetch classification:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchClassify();
+    api.get<ClassifyResponse>("/api/v1/schema/1/classify")
+      .then(data => setClassifications(data.classifications ?? {}))
+      .catch(err => console.error("Failed to fetch classification:", err))
+      .finally(() => setLoading(false));
   }, []);
 
-  const colorMap: any = {
-    red: "bg-red-500/10 text-red-500 border-red-500/20",
-    amber: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-    green: "bg-green-500/10 text-green-500 border-green-500/20",
-  };
+  const colorMap = COLOR_MAP;
 
   return (
     <div className="p-8 flex flex-col gap-6 h-full">

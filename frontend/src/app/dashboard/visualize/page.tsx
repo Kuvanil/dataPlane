@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { api } from "@/lib/api";
 import ReactFlow, {
   Background,
   Controls,
@@ -92,17 +93,11 @@ export default function VisualizePage() {
 
   const fetchConnections = useCallback(async () => {
     try {
-      const res = await fetch("http://localhost:8000/api/v1/connectors/");
-      if (!res.ok) {
-        console.error("Connections fetch failed:", res.status);
-        return;
-      }
-      const data = await res.json();
-      const list = Array.isArray(data) ? data : [];
-      setConnections(list);
-      // Pre-select CRM (id 1) as source and DW (id 2) as target when available
-      if (list.some((c: any) => c.id === 1)) setSourceId(1);
-      if (list.some((c: any) => c.id === 2)) setTargetId(2);
+      const list = await api.get<{ id: number }[]>("/api/v1/connectors/");
+      const data = Array.isArray(list) ? list : [];
+      setConnections(data);
+      if (data.some((c) => c.id === 1)) setSourceId(1);
+      if (data.some((c) => c.id === 2)) setTargetId(2);
     } catch (err) {
       console.error("Connections fetch failed:", err);
     }
@@ -114,7 +109,7 @@ export default function VisualizePage() {
       setLoading(true);
       setGraphError(null);
       const res = await fetch(
-        `http://localhost:8000/api/v1/schema/graph?source_id=${sourceId}&target_id=${targetId}`
+        `${api.base}/api/v1/schema/graph?source_id=${sourceId}&target_id=${targetId}`
       );
       if (res.ok) {
         const data = await res.json();

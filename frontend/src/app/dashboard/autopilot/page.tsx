@@ -1,15 +1,120 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useRef } from "react";
+import { api } from "@/lib/api";
+
+interface Connector {
+  id: number;
+  name: string;
+  type: string;
+}
+
+interface LogEntry {
+  step: string;
+  message: string;
+  level: string;
+  created_at: string;
+}
+
+interface RunLogsResponse {
+  run_id: string;
+  status: string;
+  logs: LogEntry[];
+}
+
+const STEP_ICONS: Record<string, string> = {
+  init: "🤖",
+  schema: "🔍",
+  matching: "🧠",
+  diff: "📊",
+  security: "🛡️",
+  sql: "💾",
+  execute: "🚀",
+  complete: "✅",
+  error: "❌",
+};
 
 export default function AutopilotPage() {
-  const [logs] = useState([
-    "🤖 [15:12:01] Autopilot initialized with Model: local-slm-8b",
-    "🔍 [15:12:04] Scanning target indices on `Analytical_Warehouse`...",
-    "💡 [15:12:06] Proposing 14 column matches (Avg confidence 94%)",
-    "🚧 [15:12:08] Detected column gap: `target.cost_center` not found in source.",
-    "✅ [15:12:10] Created schema diff graph. Awaiting user approval.",
-  ]);
+  const [connectors, setConnectors] = useState<Connector[]>([]);
+  const [sourceId, setSourceId] = useState<string>("");
+  const [targetId, setTargetId] = useState<string>("");
+  const [mode, setMode] = useState<"suggest" | "execute">("suggest");
+  const [runId, setRunId] = useState<string | null>(null);
+  const [status, setStatus] = useState<string>("");
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [running, setRunning] = useState(false);
+  const [error, setError] = useState("");
+  const consoleRef = useRef<HTMLDivElement>(null);
+  const pollingRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    api.get<Connector[]>("/api/v1/connectors/").then(setConnectors).catch(() => {});
+  }, []);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      pollingRef.current = false;
+    };
+  }, []);
+
+  function scrollConsole() {
+    if (consoleRef.current) {
+      consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
+    }
+  }
+
+  async function poll(rid: string) {
+    if (!pollingRef.current) return;
+    try {
+      const data = await api.get<RunLogsResponse>(`/api/v1/autopilot/runs/${rid}/logs`);
+      setLogs(data.logs);
+      setStatus(data.status);
+      scrollConsole();
+      if (data.status === "running" && pollingRef.current) {
+        setTimeout(() => poll(rid), 2000);
+      } else {
+        pollingRef.current = false;
+        setRunning(false);
+      }
+    } catch {
+      pollingRef.current = false;
+      setRunning(false);
+    }
+  }
+
+  const handleRun = async () => {
+    if (!sourceId || !targetId) return;
+    setError("");
+    setLogs([]);
+    setStatus("running");
+    setRunning(true);
+    pollingRef.current = false; // stop any previous poll
+    try {
+      const res = await api.post<{ run_id: string; status: string }>("/api/v1/autopilot/run", {
+        source_id: Number(sourceId),
+        target_id: Number(targetId),
+        mode,
+        model: "llama3",
+      });
+      setRunId(res.run_id);
+      pollingRef.current = true;
+      setTimeout(() => poll(res.run_id), 1000);
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Failed to start autopilot";
+      setError(msg);
+      setRunning(false);
+    }
+  };
+
+  const handleStop = () => {
+    pollingRef.current = false;
+    setRunning(false);
+    setStatus("stopped");
+  };
+
+  const sourceName = connectors.find((c) => String(c.id) === sourceId)?.name ?? "";
+  const targetName = connectors.find((c) => String(c.id) === targetId)?.name ?? "";
 
   return (
     <div className="p-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -17,15 +122,44 @@ export default function AutopilotPage() {
       <div className="lg:col-span-2 flex flex-col gap-4 rounded-2xl bg-zinc-900 border border-zinc-800 p-6 backdrop-blur-sm">
         <div className="flex justify-between items-center border-b border-zinc-800 pb-4">
           <h3 className="font-semibold text-zinc-200">AI Execution Console</h3>
-          <span className="flex items-center gap-1.5 text-xs text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20 animate-pulse">
-            <span className="w-1.5 h-1.5 bg-blue-400 rounded-full" />
-            Listening
-          </span>
+          {running ? (
+            <span className="flex items-center gap-1.5 text-xs text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20 animate-pulse">
+              <span className="w-1.5 h-1.5 bg-blue-400 rounded-full" /> Running
+            </span>
+          ) : status === "completed" ? (
+            <span className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+              ✅ Completed
+            </span>
+          ) : status === "failed" ? (
+            <span className="flex items-center gap-1.5 text-xs text-red-400 bg-red-500/10 px-3 py-1 rounded-full border border-red-500/20">
+              ❌ Failed
+            </span>
+          ) : (
+            <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-800 px-3 py-1 rounded-full border border-zinc-700">
+              Idle
+            </span>
+          )}
         </div>
-        <div className="flex-1 font-mono text-xs text-zinc-400 bg-zinc-950 p-4 rounded-xl border border-zinc-800 overflow-y-auto max-h-[400px] flex flex-col gap-2">
-          {logs.map((log, i) => (
-            <div key={i}>{log}</div>
-          ))}
+        <div
+          ref={consoleRef}
+          className="flex-1 font-mono text-xs text-zinc-400 bg-zinc-950 p-4 rounded-xl border border-zinc-800 overflow-y-auto max-h-[420px] flex flex-col gap-1.5"
+        >
+          {logs.length === 0 ? (
+            <div className="text-zinc-600 italic">
+              {running ? "Waiting for agent output..." : "Select source and target, then click Run Autopilot."}
+            </div>
+          ) : (
+            logs.map((lg, i) => (
+              <div
+                key={i}
+                className={`flex gap-2 ${lg.level === "error" ? "text-red-400" : lg.level === "warning" ? "text-amber-400" : "text-zinc-300"}`}
+              >
+                <span className="shrink-0">{STEP_ICONS[lg.step] ?? "•"}</span>
+                <span className="text-zinc-500 shrink-0">[{new Date(lg.created_at).toLocaleTimeString()}]</span>
+                <span>{lg.message}</span>
+              </div>
+            ))
+          )}
         </div>
       </div>
 
@@ -34,31 +168,85 @@ export default function AutopilotPage() {
         <div>
           <h3 className="font-semibold text-zinc-200 mb-2">Autopilot Panel</h3>
           <p className="text-xs text-zinc-400 leading-relaxed mb-4">
-            AI handles schema diffs and suggests casting rules on simulation runs.
+            AI autonomously matches schemas, detects PII, and generates migration SQL.
           </p>
           <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-zinc-500">Source Database</label>
+              <select
+                value={sourceId}
+                onChange={(e) => setSourceId(e.target.value)}
+                className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2"
+                disabled={running}
+              >
+                <option value="">— Select source —</option>
+                {connectors.map((c) => (
+                  <option key={c.id} value={String(c.id)}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-zinc-500">Target Database</label>
+              <select
+                value={targetId}
+                onChange={(e) => setTargetId(e.target.value)}
+                className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2"
+                disabled={running}
+              >
+                <option value="">— Select target —</option>
+                {connectors.filter((c) => String(c.id) !== sourceId).map((c) => (
+                  <option key={c.id} value={String(c.id)}>{c.name}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className="text-xs text-zinc-500">Mode</label>
+              <select
+                value={mode}
+                onChange={(e) => setMode(e.target.value as "suggest" | "execute")}
+                className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2"
+                disabled={running}
+              >
+                <option value="suggest">Suggest Only</option>
+                <option value="execute">Execute Pipeline</option>
+              </select>
+            </div>
             <div className="p-3 rounded-xl bg-zinc-800/50 border border-zinc-800 flex flex-col">
               <span className="text-xs text-zinc-500">Selected Model</span>
-              <span className="text-sm font-semibold text-zinc-300">Llama3-8b (ollama)</span>
+              <span className="text-sm font-semibold text-zinc-300">Llama3 (Ollama)</span>
             </div>
-            <div className="p-3 rounded-xl bg-zinc-800/50 border border-zinc-800 flex flex-col">
-              <span className="text-xs text-zinc-500">Mode</span>
-              <span className="text-sm font-semibold text-zinc-300">Suggest Only</span>
-            </div>
-            <div className="p-3 rounded-xl bg-zinc-800/50 border border-zinc-800 flex flex-col">
-              <span className="text-xs text-zinc-500">Target Action</span>
-              <span className="text-sm font-semibold text-zinc-300">MySQL ➝ Snowflake [Sim]</span>
-            </div>
+            {sourceName && targetName && (
+              <div className="p-3 rounded-xl bg-zinc-800/50 border border-zinc-800 flex flex-col">
+                <span className="text-xs text-zinc-500">Target Action</span>
+                <span className="text-sm font-semibold text-zinc-300">{sourceName} → {targetName}</span>
+              </div>
+            )}
           </div>
         </div>
 
+        {error && (
+          <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs">{error}</div>
+        )}
+
         <div className="flex flex-col gap-2">
-          <button className="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-semibold text-white transition-all">
-            Simulate Pipeline
+          <button
+            onClick={handleRun}
+            disabled={running || !sourceId || !targetId}
+            className="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {running ? "Running..." : "Run Autopilot"}
           </button>
-          <button className="w-full py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-semibold text-zinc-400 transition-all border border-transparent hover:border-zinc-600">
-            Edit Plan
-          </button>
+          {running && (
+            <button
+              onClick={handleStop}
+              className="w-full py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-semibold text-zinc-400 transition-all border border-transparent hover:border-zinc-600"
+            >
+              Stop
+            </button>
+          )}
+          {runId && !running && (
+            <div className="text-xs text-zinc-600 text-center font-mono">run: {runId.slice(0, 8)}…</div>
+          )}
         </div>
       </div>
     </div>

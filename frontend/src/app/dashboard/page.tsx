@@ -1,7 +1,24 @@
 "use client";
 import Link from "next/link";
+import { useEffect, useState } from "react";
+import { api } from "@/lib/api";
+
+interface DriftAlert {
+  id: number;
+  connection_name: string | null;
+  created_at: string;
+  payload: Record<string, unknown> | null;
+}
 
 export default function DashboardPage() {
+  const [driftAlerts, setDriftAlerts] = useState<DriftAlert[]>([]);
+
+  useEffect(() => {
+    api.get<DriftAlert[]>("/api/v1/audit/?event_type=schema_drift_detected&page_size=5")
+      .then(setDriftAlerts)
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="p-6 flex flex-col gap-6 overflow-y-auto">
       {/* Top Metrics */}
@@ -37,6 +54,27 @@ export default function DashboardPage() {
           </Link>
         ))}
       </div>
+
+      {/* Schema Drift Alerts */}
+      {driftAlerts.length > 0 && (
+        <div className="p-4 rounded-2xl bg-red-500/5 border border-red-500/20">
+          <h3 className="font-semibold text-red-400 mb-3 flex items-center gap-2">⚠️ Schema Drift Detected</h3>
+          <div className="flex flex-col gap-2">
+            {driftAlerts.map((alert) => (
+              <div key={alert.id} className="flex items-center justify-between p-3 rounded-xl bg-red-500/5 border border-red-500/10">
+                <div>
+                  <span className="text-sm font-medium text-zinc-200">{alert.connection_name ?? "Unknown connection"}</span>
+                  <span className="text-xs text-zinc-500 ml-2">schema changed</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-xs text-zinc-500">{new Date(alert.created_at).toLocaleString()}</span>
+                  <Link href="/dashboard/schema" className="text-xs text-blue-400 hover:text-blue-300">Inspect →</Link>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Activity Feed */}

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { api } from "@/lib/api";
 
 interface Connection {
   id: number;
@@ -51,7 +52,7 @@ type TaskStatus = "idle" | "pending" | "success" | "failure" | "timeout";
 
 const POLL_INTERVAL_MS = 2000;
 const MAX_POLLS = 30;
-const API_BASE = "http://localhost:8000/api/v1";
+const API_BASE = `${api.base}/api/v1`;
 
 /* ────────────────── helpers ────────────────── */
 function confidenceBadgeClasses(confidence: number): string {

@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { api } from "@/lib/api";
 
 interface MappingRule {
   source_column?: string; source_table?: string; target_column?: string; target_table?: string;
@@ -25,7 +26,7 @@ export default function SchemaMapperPage() {
   const fetchVisualData = async () => {
     try {
       setLoading(true);
-      const res = await fetch("http://localhost:8000/api/v1/mapper/visual-data", {
+      const res = await fetch("${api.base}/api/v1/mapper/visual-data", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source_id: 1, target_id: 2 }),
       });
@@ -61,7 +62,7 @@ export default function SchemaMapperPage() {
     if (!englishInput.trim()) return;
     setParseLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/api/v1/mapper/parse", {
+      const res = await fetch("${api.base}/api/v1/mapper/parse", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ text: englishInput, source_id: 1, target_id: 2 }),
       });
@@ -88,7 +89,7 @@ export default function SchemaMapperPage() {
       return { source_column: sn?.column, source_table: sn?.table, target_column: tn?.column, target_table: tn?.table, transform: "direct" };
     })];
     try {
-      const res = await fetch("http://localhost:8000/api/v1/mapper/generate-sql", {
+      const res = await fetch("${api.base}/api/v1/mapper/generate-sql", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mappings: allRules, target_db_type: "sqlite" }),
       });

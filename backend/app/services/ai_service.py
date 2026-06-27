@@ -1,7 +1,11 @@
+import logging
 import requests
 import json
 from typing import List, Dict, Any
 from app.core.config import settings
+from app.core.circuit_breaker import ollama_circuit, CircuitBreakerOpen
+
+logger = logging.getLogger(__name__)
 
 class AIService:
     @staticmethod
@@ -40,31 +44,41 @@ class AIService:
         }}
         """
 
-        try:
-            response = requests.post(
-                AIService.get_ollama_url(),
-                json={
-                    "model": "llama3", # or llama3/mistral
-                    "prompt": prompt,
-                    "stream": False,
-                    "format": "json"
-                },
-                timeout=10 # short timeout to avoid hanging if loading
-            )
-            if response.status_code == 200:
-                result = response.json()
-                parsed = json.loads(result.get("response", "{}"))
-                # Normalize confidence to a consistent 0-100 scale
-                normalized_matches = []
-                for match in parsed.get("matches", []) or []:
-                    normalized_matches.append({
-                        **match,
-                        "confidence": AIService._normalize_confidence(match.get("confidence", 0)),
-                    })
-                parsed["matches"] = normalized_matches
-                return parsed
-        except Exception as e:
-            print(f"Ollama call failed: {e}. Falling back to rule-based or placeholder response.")
+        import time as _time
+        for attempt in range(settings.OLLAMA_MAX_RETRIES + 1):
+            try:
+                def _post():
+                    return requests.post(
+                        AIService.get_ollama_url(),
+                        json={
+                            "model": settings.OLLAMA_MODEL,
+                            "prompt": prompt,
+                            "stream": False,
+                            "format": "json",
+                        },
+                        timeout=settings.OLLAMA_TIMEOUT,
+                    )
+                response = ollama_circuit.call(_post)
+                if response.status_code == 200:
+                    result = response.json()
+                    parsed = json.loads(result.get("response", "{}"))
+                    normalized_matches = []
+                    for match in parsed.get("matches", []) or []:
+                        normalized_matches.append({
+                            **match,
+                            "confidence": AIService._normalize_confidence(match.get("confidence", 0)),
+                        })
+                    parsed["matches"] = normalized_matches
+                    return parsed
+                logger.warning("Ollama returned status %s on attempt %d", response.status_code, attempt + 1)
+            except CircuitBreakerOpen as e:
+                logger.warning("Ollama circuit open, skipping retries: %s", e)
+                break
+            except Exception as e:
+                logger.warning("Ollama call failed (attempt %d/%d): %s", attempt + 1, settings.OLLAMA_MAX_RETRIES + 1, e)
+                if attempt < settings.OLLAMA_MAX_RETRIES:
+                    _time.sleep(2 ** attempt)
+        logger.info("Falling back to rule-based matching")
 
         # Fallback Mockup Response mimicking semantic matching
         matches = []

@@ -6,10 +6,15 @@ and generates analysis reports.
 """
 
 import json
+import logging
 import re
+import time
 import requests
 from typing import List, Dict, Any, Optional
 from app.core.config import settings
+from app.core.circuit_breaker import ollama_circuit, CircuitBreakerOpen
+
+logger = logging.getLogger(__name__)
 
 
 class NL2SQLService:
@@ -89,22 +94,31 @@ Rules:
 
 SQL:"""
 
-        try:
-            resp = requests.post(
-                f"{settings.OLLAMA_HOST}/api/generate",
-                json={"model": "llama3", "prompt": prompt, "stream": False},
-                timeout=15,
-            )
-            if resp.status_code == 200:
-                generated = resp.json().get("response", "").strip()
-                # Extract SQL from potential markdown code fences
-                sql_match = re.search(r"```sql\s*(.*?)```", generated, re.DOTALL)
-                sql = sql_match.group(1).strip() if sql_match else generated.strip()
-                if NL2SQLService._is_safe(sql):
-                    return {"sql": sql, "method": "llm", "confidence": 88}
-                return {"sql": sql, "method": "llm", "confidence": 0, "blocked": True, "reason": "Unsafe query detected"}
-        except Exception as e:
-            pass  # Fallback below
+        for attempt in range(settings.OLLAMA_MAX_RETRIES + 1):
+            try:
+                def _post():
+                    return requests.post(
+                        f"{settings.OLLAMA_HOST}/api/generate",
+                        json={"model": settings.OLLAMA_MODEL, "prompt": prompt, "stream": False},
+                        timeout=settings.OLLAMA_TIMEOUT,
+                    )
+                resp = ollama_circuit.call(_post)
+                if resp.status_code == 200:
+                    generated = resp.json().get("response", "").strip()
+                    sql_match = re.search(r"```sql\s*(.*?)```", generated, re.DOTALL)
+                    sql = sql_match.group(1).strip() if sql_match else generated.strip()
+                    if NL2SQLService._is_safe(sql):
+                        return {"sql": sql, "method": "llm", "confidence": 88}
+                    return {"sql": sql, "method": "llm", "confidence": 0, "blocked": True, "reason": "Unsafe query detected"}
+                logger.warning("Ollama NL2SQL returned status %s on attempt %d", resp.status_code, attempt + 1)
+            except CircuitBreakerOpen as e:
+                logger.warning("Ollama circuit open, skipping NL2SQL retries: %s", e)
+                break
+            except Exception as e:
+                logger.warning("Ollama NL2SQL call failed (attempt %d/%d): %s", attempt + 1, settings.OLLAMA_MAX_RETRIES + 1, e)
+                if attempt < settings.OLLAMA_MAX_RETRIES:
+                    time.sleep(2 ** attempt)
+        logger.info("NL2SQL falling back to heuristic generator")
 
         # ── Heuristic fallback ────────────────────────────────
         return NL2SQLService._heuristic_generate(natural_query, schema_context)

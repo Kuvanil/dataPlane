@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ReactFlow, { Background, Controls, MarkerType } from "reactflow";
 import "reactflow/dist/style.css";
+import { api, ApiError } from "@/lib/api";
 
 // ===== Types =====
 
@@ -158,22 +159,11 @@ export default function PipelinesPage() {
   const [expandedMappings, setExpandedMappings] = useState<Record<number, boolean>>({});
   const [sqlTab, setSqlTab] = useState<"ddl" | "dml" | "warnings">("ddl");
 
-  // Fetch connectors on mount
   useEffect(() => {
-    const fetchConnectors = async () => {
-      try {
-        const res = await fetch("http://localhost:8000/api/v1/connectors/");
-        if (res.ok) {
-          const data = await res.json();
-          setConnectors(data || []);
-        }
-      } catch (err) {
-        console.error("Failed to load connectors", err);
-      } finally {
-        setConnectorsLoading(false);
-      }
-    };
-    fetchConnectors();
+    api.get<Connector[]>("/api/v1/connectors/")
+      .then(data => setConnectors(data ?? []))
+      .catch(err => console.error("Failed to load connectors:", err))
+      .finally(() => setConnectorsLoading(false));
   }, []);
 
   // Lookup helpers
@@ -240,30 +230,19 @@ export default function PipelinesPage() {
       .map((e) => ({ id: e.id, source: e.source, target: e.target }));
 
     try {
-      const res = await fetch("http://localhost:8000/api/v1/pipelines/execute", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nodes: executableNodes, edges: executableEdges }),
+      const data = await api.post<ExecuteResult>("/api/v1/pipelines/execute", {
+        nodes: executableNodes,
+        edges: executableEdges,
       });
-
-      if (!res.ok) {
-        let detail = `Request failed with status ${res.status}`;
-        try {
-          const errBody = await res.json();
-          if (errBody?.detail) detail = errBody.detail;
-        } catch {
-          // ignore JSON parse error
-        }
-        setExecuteError(detail);
-        return;
-      }
-
-      const data: ExecuteResult = await res.json();
       setResult(data);
       setExpandedMappings({});
       setSqlTab("ddl");
     } catch (err) {
-      setExecuteError("Failed to reach backend. Please ensure the API is running.");
+      setExecuteError(
+        err instanceof ApiError
+          ? err.message
+          : "Failed to reach backend. Please ensure the API is running.",
+      );
     } finally {
       setExecuting(false);
     }

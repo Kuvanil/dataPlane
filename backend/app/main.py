@@ -1,12 +1,48 @@
+import logging
+import logging.config
+import time
+import uuid
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from app.api.routers import connectors, schema, agent, query, askdata, mapper, pipelines
 from app.api.routers import tasks as tasks_router
+from app.api.routers import audit as audit_router
+from app.api.routers import auth as auth_router
+from app.api.routers import autopilot as autopilot_router
 from app.core.celery_app import celery_app  # noqa: F401  (registers tasks on import)
 from app.core.config import settings
-from app.core.database import Base, engine
-from app.models.connection import DBConnection # ensure models loaded
+from app.core.database import Base, engine, SessionLocal
+from app.models.connection import DBConnection  # ensure models loaded
+from app.models.audit import AuditLog  # noqa: F401
+from app.models.query_history import QueryHistory  # noqa: F401
+from app.models.chat_session import ChatMessage  # noqa: F401
+from app.models.schema_snapshot import SchemaSnapshot  # noqa: F401
+from app.models.user import User  # noqa: F401
+from app.models.autopilot import AutopilotRun, AutopilotLog  # noqa: F401
+
+# ── Structured logging setup ──────────────────────────────────────────────────
+logging.config.dictConfig({
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "json": {
+            "format": "%(asctime)s %(levelname)s %(name)s %(message)s",
+        }
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "json",
+        }
+    },
+    "root": {
+        "level": settings.LOG_LEVEL,
+        "handlers": ["console"],
+    },
+})
+logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -181,6 +217,21 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    # 4. Seed default admin user if none exists
+    from app.services.auth_service import AuthService
+    db = SessionLocal()
+    try:
+        if not db.query(User).first():
+            db.add(User(
+                email="admin@dataplane.ai",
+                hashed_password=AuthService.hash_password(settings.ADMIN_DEFAULT_PASSWORD),
+                role="admin",
+                is_active=True,
+            ))
+            db.commit()
+    finally:
+        db.close()
+
     yield
 
 app = FastAPI(
@@ -190,7 +241,7 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# CORS
+# ── CORS ──────────────────────────────────────────────────────────────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -198,6 +249,27 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ── Request logging middleware ────────────────────────────────────────────────
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    request_id = str(uuid.uuid4())[:8]
+    start = time.monotonic()
+    response = await call_next(request)
+    duration_ms = round((time.monotonic() - start) * 1000)
+    logger.info(
+        "request completed",
+        extra={
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status": response.status_code,
+            "duration_ms": duration_ms,
+        },
+    )
+    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Response-Time"] = f"{duration_ms}ms"
+    return response
 
 # Include Routers
 app.include_router(connectors.router, prefix="/api/v1/connectors", tags=["Connectors"])
@@ -208,7 +280,44 @@ app.include_router(askdata.router, prefix="/api/v1/askdata", tags=["AskData Bot"
 app.include_router(mapper.router, prefix="/api/v1/mapper", tags=["Schema Mapper"])
 app.include_router(tasks_router.router, prefix="/api/v1/tasks", tags=["Tasks"])
 app.include_router(pipelines.router, prefix="/api/v1/pipelines", tags=["Pipelines"])
+app.include_router(audit_router.router, prefix="/api/v1/audit", tags=["Audit Trail"])
+app.include_router(auth_router.router, prefix="/api/v1/auth", tags=["Auth"])
+app.include_router(autopilot_router.router, prefix="/api/v1/autopilot", tags=["AI Autopilot"])
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy", "service": "dataPlane API", "version": "1.0.0"}
+    """Deep health check: verifies DB and Redis connectivity."""
+    checks: dict = {}
+    overall = "healthy"
+
+    # Database probe
+    try:
+        db = SessionLocal()
+        db.execute(__import__("sqlalchemy").text("SELECT 1"))
+        db.close()
+        checks["database"] = "ok"
+    except Exception as exc:
+        checks["database"] = f"error: {exc}"
+        overall = "degraded"
+
+    # Redis probe
+    try:
+        import redis as _redis
+        broker_url = settings.CELERY_BROKER_URL
+        r = _redis.from_url(broker_url, socket_connect_timeout=2)
+        r.ping()
+        checks["redis"] = "ok"
+    except Exception as exc:
+        checks["redis"] = f"error: {exc}"
+        overall = "degraded"
+
+    status_code = 200 if overall == "healthy" else 503
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": overall,
+            "service": "dataPlane API",
+            "version": "1.0.0",
+            "checks": checks,
+        },
+    )

@@ -6,6 +6,7 @@ from app.services.schema_service import SchemaService
 from app.services.diff_service import DiffService
 from app.services.security_service import SecurityService
 from app.services.ai_service import AIService
+from app.services.audit_helper import record_audit
 
 router = APIRouter()
 
@@ -45,12 +46,47 @@ def classify_schema(id: int, db: Session = Depends(get_db)):
     try:
         schema_data = SchemaService.get_full_schema(db_conn)
         classifications = SecurityService.classify_schema(schema_data)
+        pii_count = sum(
+            1 for cols in classifications.values()
+            for c in cols
+            if isinstance(c, dict) and c.get("classification", {}).get("level") == "High"
+        )
+        record_audit(db, "schema_classified", connection_id=db_conn.id, connection_name=db_conn.name,
+                     payload={"tables": len(schema_data), "pii_columns": pii_count})
         return {
             "name": db_conn.name,
             "classifications": classifications
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Classification failed: {str(e)}")
+
+@router.get("/{id}/drift-history")
+def get_drift_history(id: int, db: Session = Depends(get_db)):
+    """Return the last 5 schema snapshots for a connection."""
+    from app.models.schema_snapshot import SchemaSnapshot
+    db_conn = db.query(DBConnection).filter(DBConnection.id == id).first()
+    if not db_conn:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    snapshots = (
+        db.query(SchemaSnapshot)
+        .filter(SchemaSnapshot.connection_id == id)
+        .order_by(SchemaSnapshot.captured_at.desc())
+        .limit(5)
+        .all()
+    )
+    return {
+        "connection": db_conn.name,
+        "snapshots": [
+            {
+                "id": s.id,
+                "schema_hash": s.schema_hash,
+                "captured_at": s.captured_at,
+                "table_count": len(s.schema_json) if s.schema_json else 0,
+            }
+            for s in snapshots
+        ],
+    }
+
 
 @router.get("/graph")
 def get_graph_data(source_id: int, target_id: int, db: Session = Depends(get_db)):

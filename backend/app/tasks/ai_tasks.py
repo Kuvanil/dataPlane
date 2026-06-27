@@ -4,7 +4,11 @@ Each task accepts only serializable inputs (ints, strings, dicts, JSON strings)
 and creates its own short-lived DB session via SessionLocal.
 """
 
+import hashlib
 import json
+import logging
+import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from app.core.celery_app import celery_app
@@ -14,6 +18,8 @@ from app.services.ai_service import AIService
 from app.services.nl2sql_service import NL2SQLService
 from app.services.schema_mapper_service import SchemaMapperService
 from app.services.schema_service import SchemaService
+
+logger = logging.getLogger(__name__)
 
 
 def _get_schema_for_connection(connection_id: int) -> Dict[str, Any]:
@@ -259,5 +265,276 @@ def schema_wide_match_task(
             "total_source_tables": len(source_schema),
             "total_target_tables": len(target_schema),
         }
+    finally:
+        db.close()
+
+
+@celery_app.task(name="app.tasks.ai_tasks.check_schema_drift_task", bind=True)
+def check_schema_drift_task(self) -> Dict[str, Any]:
+    """Periodic task: snapshot all DB schemas and detect drift."""
+    from app.models.schema_snapshot import SchemaSnapshot
+    from app.models.audit import AuditLog
+    from app.services.diff_service import DiffService
+
+    db = SessionLocal()
+    results = []
+    try:
+        connections = db.query(DBConnection).all()
+        for conn in connections:
+            try:
+                schema = SchemaService.get_full_schema(conn)
+            except Exception as exc:
+                logger.warning("Drift check: schema fetch failed for '%s': %s", conn.name, exc)
+                continue
+
+            schema_str = json.dumps(schema, sort_keys=True, default=str)
+            current_hash = hashlib.sha256(schema_str.encode()).hexdigest()
+
+            latest = (
+                db.query(SchemaSnapshot)
+                .filter(SchemaSnapshot.connection_id == conn.id)
+                .order_by(SchemaSnapshot.captured_at.desc())
+                .first()
+            )
+
+            drift_detected = False
+            if latest is None:
+                logger.info("Drift check: first snapshot for '%s'", conn.name)
+            elif latest.schema_hash != current_hash:
+                drift_detected = True
+                diff = DiffService.compare_schemas(latest.schema_json or {}, schema)
+                audit = AuditLog(
+                    event_type="schema_drift_detected",
+                    actor="drift-monitor",
+                    connection_id=conn.id,
+                    connection_name=conn.name,
+                    payload={
+                        "previous_hash": latest.schema_hash,
+                        "current_hash": current_hash,
+                        "diff_summary": {
+                            "matched_tables": len(diff.get("matched_tables", [])),
+                            "missing_in_target": diff.get("missing_tables_in_target", []),
+                            "missing_in_source": diff.get("missing_tables_in_source", []),
+                        },
+                    },
+                    status="warning",
+                )
+                db.add(audit)
+                logger.warning("Schema drift detected for connection '%s'", conn.name)
+                results.append({"connection": conn.name, "drift": True})
+            else:
+                results.append({"connection": conn.name, "drift": False})
+
+            # Save new snapshot
+            snapshot = SchemaSnapshot(
+                connection_id=conn.id,
+                connection_name=conn.name,
+                schema_hash=current_hash,
+                schema_json=schema,
+            )
+            db.add(snapshot)
+
+            # Keep only last 10 snapshots per connection
+            old_snapshots = (
+                db.query(SchemaSnapshot)
+                .filter(SchemaSnapshot.connection_id == conn.id)
+                .order_by(SchemaSnapshot.captured_at.desc())
+                .offset(10)
+                .all()
+            )
+            for old in old_snapshots:
+                db.delete(old)
+
+        db.commit()
+    except Exception as exc:
+        logger.error("check_schema_drift_task failed: %s", exc)
+        try:
+            db.rollback()
+        except Exception:
+            pass
+    finally:
+        db.close()
+
+    return {"checked": len(results), "drifted": sum(1 for r in results if r.get("drift"))}
+
+
+@celery_app.task(name="app.tasks.ai_tasks.run_autopilot_task", bind=True)
+def run_autopilot_task(self, run_id: str, source_id: int, target_id: int, mode: str) -> Dict[str, Any]:
+    """Multi-step autonomous agent loop for AI Autopilot."""
+    from app.models.autopilot import AutopilotRun, AutopilotLog
+    from app.models.audit import AuditLog
+    from app.services.diff_service import DiffService
+    from app.services.security_service import SecurityService
+    from app.services.schema_mapper_service import SchemaMapperService
+    from app.services.pipeline_service import PipelineService
+
+    db = SessionLocal()
+
+    def _log(step: str, message: str, level: str = "info") -> None:
+        try:
+            db.add(AutopilotLog(run_id=run_id, step=step, message=message, level=level))
+            db.commit()
+        except Exception as exc:
+            logger.warning("Failed to write autopilot log: %s", exc)
+            try:
+                db.rollback()
+            except Exception:
+                pass
+
+    def _finish(status: str, summary: Dict[str, Any]) -> None:
+        try:
+            run = db.query(AutopilotRun).filter(AutopilotRun.id == run_id).first()
+            if run:
+                run.status = status
+                run.completed_at = datetime.now(timezone.utc)
+                run.result_summary = summary
+                db.add(AuditLog(
+                    event_type="autopilot_run",
+                    actor="autopilot",
+                    connection_id=source_id,
+                    payload={"run_id": run_id, "mode": mode, "status": status, **summary},
+                    status="success" if status == "completed" else "failure",
+                ))
+                db.commit()
+        except Exception as exc:
+            logger.warning("Failed to update autopilot run status: %s", exc)
+
+    try:
+        _log("init", "Autopilot initialized — scanning source and target schemas")
+
+        source_conn = db.query(DBConnection).filter(DBConnection.id == source_id).first()
+        target_conn = db.query(DBConnection).filter(DBConnection.id == target_id).first()
+        if not source_conn or not target_conn:
+            _log("init", f"Connection not found (source_id={source_id}, target_id={target_id})", "error")
+            _finish("failed", {"error": "Connection not found"})
+            return {"status": "failed"}
+
+        # Step 1: Extract schemas
+        _log("schema", f"Extracting schema from '{source_conn.name}'...")
+        source_schema = SchemaService.get_full_schema(source_conn)
+        _log("schema", f"Source '{source_conn.name}': {len(source_schema)} tables found")
+
+        _log("schema", f"Extracting schema from '{target_conn.name}'...")
+        target_schema = SchemaService.get_full_schema(target_conn)
+        _log("schema", f"Target '{target_conn.name}': {len(target_schema)} tables found")
+
+        # Step 2: AI matching
+        _log("matching", "Running AI semantic column matching across all table pairs...")
+        table_mappings: List[Dict[str, Any]] = []
+        unmatched_source: List[str] = []
+        matched_target_tables: set = set()
+
+        for src_table, src_cols in source_schema.items():
+            best_target = None
+            best_conf = 0.0
+            best_details: Dict[str, Any] = {}
+            for tgt_table, tgt_cols in target_schema.items():
+                try:
+                    match_result = AIService.match_schemas(
+                        source_name=src_table, source_schema=src_cols,
+                        target_name=tgt_table, target_schema=tgt_cols,
+                    )
+                    matches = match_result.get("matches", []) or []
+                    max_conf = max((m.get("confidence", 0) for m in matches), default=0)
+                    if max_conf > best_conf:
+                        best_conf = max_conf
+                        best_target = tgt_table
+                        best_details = match_result
+                except Exception:
+                    pass
+            if best_target and best_conf >= 50:
+                table_mappings.append({"source_table": src_table, "target_table": best_target,
+                                       "confidence": best_conf, "details": best_details})
+                matched_target_tables.add(best_target)
+                _log("matching", f"Matched '{src_table}' → '{best_target}' ({best_conf:.0f}% confidence)")
+            else:
+                unmatched_source.append(src_table)
+                _log("matching", f"No match found for '{src_table}' (best confidence: {best_conf:.0f}%)", "warning")
+
+        unmatched_target = [t for t in target_schema if t not in matched_target_tables]
+        _log("matching", f"AI matching complete: {len(table_mappings)} matched, {len(unmatched_source)} unmatched source tables")
+
+        # Step 3: Schema diff
+        _log("diff", "Running structural schema diff...")
+        diff = DiffService.compare_schemas(source_schema, target_schema)
+        missing_in_target = diff.get("missing_tables_in_target", [])
+        type_mismatches_count = sum(len(td.get("type_mismatches", [])) for td in diff.get("table_diffs", {}).values())
+        _log("diff", f"Diff: {len(missing_in_target)} tables missing in target, {type_mismatches_count} type mismatches")
+
+        # Step 4: PII classification
+        _log("security", f"Running PII classification on '{source_conn.name}'...")
+        classifications = SecurityService.classify_schema(source_schema)
+        pii_count = sum(
+            1 for cols in classifications.values()
+            for c in cols
+            if isinstance(c, dict) and c.get("classification", {}).get("level") == "High"
+        )
+        _log("security", f"Security scan complete: {pii_count} PII columns detected")
+
+        # Step 5: Generate migration SQL
+        _log("sql", "Generating migration SQL from matched table mappings...")
+        mapping_rules: List[Dict[str, Any]] = []
+        for tm in table_mappings:
+            for match in tm["details"].get("matches", []):
+                if match.get("confidence", 0) >= 50:
+                    mapping_rules.append({
+                        "action": "column_mapping",
+                        "source_table": tm["source_table"],
+                        "target_table": tm["target_table"],
+                        "source_column": match["source"],
+                        "target_column": match["target"],
+                    })
+        sql_result = SchemaMapperService.generate_migration_sql(mapping_rules, target_conn.type)
+        ddl_count = len(sql_result.get("ddl", []))
+        dml_count = len(sql_result.get("dml", []))
+        _log("sql", f"Generated {ddl_count} DDL and {dml_count} DML statements")
+
+        # Step 6: Execute if mode == "execute"
+        rows_copied = 0
+        if mode == "execute" and table_mappings:
+            _log("execute", "Executing pipeline migration...")
+            try:
+                nodes = [
+                    {"id": "src", "type": "source", "config": {"connection_id": source_id}},
+                    {"id": "matcher", "type": "ai_matcher", "config": None},
+                    {"id": "tgt", "type": "target", "config": {"connection_id": target_id}},
+                ]
+                edges = [
+                    {"id": "e1", "source": "src", "target": "matcher"},
+                    {"id": "e2", "source": "matcher", "target": "tgt"},
+                ]
+                exec_result = PipelineService.execute_pipeline(nodes, edges)
+                rows_copied = exec_result.get("rows_copied", 0)
+                _log("execute", f"Pipeline execution complete — {rows_copied} rows copied")
+            except Exception as exc:
+                _log("execute", f"Pipeline execution failed: {exc}", "error")
+        else:
+            _log("execute", "Mode is 'suggest' — skipping live execution. Review the generated SQL before applying.")
+
+        summary = {
+            "source": source_conn.name,
+            "target": target_conn.name,
+            "tables_matched": len(table_mappings),
+            "tables_unmatched": len(unmatched_source),
+            "pii_columns": pii_count,
+            "ddl_statements": ddl_count,
+            "dml_statements": dml_count,
+            "rows_copied": rows_copied,
+            "table_mappings": table_mappings,
+            "migration_sql": sql_result,
+        }
+        _log("complete", f"Autopilot run complete. {len(table_mappings)} tables matched, {pii_count} PII columns identified.")
+        _finish("completed", summary)
+        return summary
+
+    except Exception as exc:
+        logger.error("run_autopilot_task failed: %s", exc)
+        _log("error", f"Autopilot failed: {exc}", "error")
+        _finish("failed", {"error": str(exc)})
+        try:
+            db.rollback()
+        except Exception:
+            pass
+        return {"status": "failed", "error": str(exc)}
     finally:
         db.close()

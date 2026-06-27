@@ -74,6 +74,33 @@ React Flow based drag-and-drop canvas for designing data transformation pipeline
 - Docker and Docker Compose installed
 - 2GB+ RAM (4GB+ if using Ollama LLM)
 
+### Environment Configuration
+
+Copy `.env.example` to `.env` and adjust values as needed:
+
+```bash
+cp .env.example .env
+```
+
+Copy the frontend env example for local development:
+
+```bash
+cp frontend/.env.local.example frontend/.env.local
+```
+
+Key variables:
+
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `OLLAMA_HOST` | `http://host.docker.internal:11434` | URL of the running Ollama instance |
+| `OLLAMA_MODEL` | `llama3` | Model name for all LLM calls (must be pulled first) |
+| `OLLAMA_TIMEOUT` | `15` | Per-request timeout in seconds |
+| `OLLAMA_MAX_RETRIES` | `2` | Retry attempts with exponential backoff on transient errors |
+| `LOG_LEVEL` | `INFO` | Logging verbosity (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `NEXT_PUBLIC_API_URL` | `http://localhost:8000` | Backend URL used by the frontend (browser-visible) |
+
+> To use a different model: `ollama pull mistral` then set `OLLAMA_MODEL=mistral`.
+
 ### Run
 
 ```bash
@@ -150,18 +177,22 @@ dataplane/
 │   ├── entrypoint.sh
 │   └── requirements.txt
 ├── frontend/
-│   ├── src/app/
-│   │   ├── dashboard/
-│   │   │   ├── visualize/     # Graph Visualizer
-│   │   │   ├── query-studio/  # NL-to-SQL
-│   │   │   ├── askdata/       # AI Chatbot
-│   │   │   ├── schema-mapper/ # Visual Mapper
-│   │   │   ├── connectors/    # DB Connections
-│   │   │   ├── schema/        # Schema Intelligence
-│   │   │   ├── pipelines/     # Pipeline Studio
-│   │   │   ├── autopilot/     # AI Autopilot
-│   │   │   └── security/      # Security Center
-│   │   └── login/             # Authentication
+│   ├── src/
+│   │   ├── app/
+│   │   │   ├── dashboard/
+│   │   │   │   ├── visualize/     # Graph Visualizer
+│   │   │   │   ├── query-studio/  # NL-to-SQL
+│   │   │   │   ├── askdata/       # AI Chatbot
+│   │   │   │   ├── schema-mapper/ # Visual Mapper
+│   │   │   │   ├── connectors/    # DB Connections
+│   │   │   │   ├── schema/        # Schema Intelligence
+│   │   │   │   ├── pipelines/     # Pipeline Studio
+│   │   │   │   ├── autopilot/     # AI Autopilot
+│   │   │   │   └── security/      # Security Center
+│   │   │   └── login/             # Authentication
+│   │   └── lib/
+│   │       └── api.ts             # Centralized API client (reads NEXT_PUBLIC_API_URL)
+│   ├── .env.local.example         # Frontend env var template
 │   ├── Dockerfile
 │   └── ...
 ├── docker-compose.yml         # Multi-service orchestration
@@ -175,6 +206,8 @@ dataplane/
 | Endpoint | Method | Description |
 | :--- | :--- | :--- |
 | `/api/v1/connectors/` | GET/POST | List/create database connectors |
+| `/api/v1/connectors/{id}` | GET | Get connector by ID |
+| `/api/v1/connectors/{id}` | DELETE | Delete a connector |
 | `/api/v1/connectors/{id}/schema` | GET | Extract schema metadata |
 | `/api/v1/connectors/{id}/test` | POST | Test connection health |
 | `/api/v1/schema/diff` | GET | Compare two schemas |
@@ -234,6 +267,23 @@ Demo data is seeded automatically on first API startup. The four SQLite files ar
 6. **Schema Mapper** → Drag columns or type "Map email_address to contact_email"
 7. **Connectors** → Add new Postgres/MySQL/Oracle/JDBC connections
 8. **Security** → Review DAMA classifications and PII policies
+
+---
+
+## Production Standards
+
+This codebase follows the conventions defined in `prompts/`:
+
+| Standard | Implementation |
+| :--- | :--- |
+| **No hardcoded config** | All Ollama settings (`host`, `model`, `timeout`, `retries`) are env vars via `Settings` in `core/config.py` |
+| **Retries with backoff** | All Ollama calls retry up to `OLLAMA_MAX_RETRIES` times with `2^n` second delays |
+| **Structured logging** | Every service and router uses `logging.getLogger(__name__)` — no bare `print()` |
+| **No silent failures** | All `except Exception: pass` replaced with `logger.warning(...)` |
+| **Input validation** | Connector creation validates name format, type allowlist, config type, and duplicate names |
+| **Pipeline stage logging** | Every pipeline stage emits a `logger.info("[pipeline] stage=...")` entry |
+| **Environment-driven frontend** | All API calls read `NEXT_PUBLIC_API_URL` via `src/lib/api.ts` — no hardcoded hosts |
+| **No placeholder UI** | "Test Conn" and "Scan Schema" buttons are fully wired to backend endpoints |
 
 ---
 

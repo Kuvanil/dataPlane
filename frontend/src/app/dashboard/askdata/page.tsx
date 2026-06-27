@@ -1,7 +1,9 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import { api } from "@/lib/api";
 
-interface Message { role: "user"|"assistant"; content: string; timestamp: string; }
+interface Message { role: "user" | "assistant"; content: string; timestamp: string; }
+interface ChatResponse { response: string; session_id: string; message_count: number; }
 
 const SUGGESTIONS = [
   "What PII risks exist in the connected databases?",
@@ -21,8 +23,15 @@ export default function AskDataPage() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [sessionId] = useState(() => `s_${Date.now()}`);
+  const [connectedCount, setConnectedCount] = useState<number | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    api.get<{ id: number }[]>("/api/v1/connectors/")
+      .then(data => setConnectedCount(data.length))
+      .catch(() => setConnectedCount(null));
+  }, []);
 
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages]);
 
@@ -47,12 +56,7 @@ export default function AskDataPage() {
     setMessages(p => [...p, { role: "user", content: msg, timestamp: new Date().toLocaleTimeString() }]);
     setInput(""); setLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/api/v1/askdata/chat", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: msg, session_id: sessionId }),
-      });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
+      const data = await api.post<ChatResponse>("/api/v1/askdata/chat", { message: msg, session_id: sessionId });
       setMessages(p => [...p, { role: "assistant", content: data.response, timestamp: new Date().toLocaleTimeString() }]);
     } catch {
       setMessages(p => [...p, { role: "assistant", content: offlineResponse(msg), timestamp: new Date().toLocaleTimeString() }]);
@@ -76,7 +80,8 @@ export default function AskDataPage() {
           <p className="text-xs text-zinc-500 ml-10">Ask anything about your databases</p>
         </div>
         <span className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
-          <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" /> 5 DBs Connected
+          <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />
+          {connectedCount !== null ? `${connectedCount} DB${connectedCount === 1 ? "" : "s"} Connected` : "Connecting..."}
         </span>
       </div>
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">

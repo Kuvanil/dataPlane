@@ -5,17 +5,20 @@ Provides context-aware answers about database issues, needs, and challenges
 by combining schema metadata, diff results, and security classifications.
 """
 
-import json
+import logging
 import requests
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, TYPE_CHECKING
 from app.core.config import settings
+
+if TYPE_CHECKING:
+    from sqlalchemy.orm import Session
+
+logger = logging.getLogger(__name__)
 
 
 class AskDataService:
     """AI-powered Q&A engine for database intelligence."""
 
-    # ── Session memory (in-memory for demo) ───────────────────
-    _sessions: Dict[str, List[Dict[str, str]]] = {}
 
     # ── Pre-built Q&A patterns ────────────────────────────────
     KNOWLEDGE_BASE = {
@@ -81,37 +84,89 @@ class AskDataService:
         message: str,
         session_id: str,
         context: Dict[str, Any],
+        db: Optional["Session"] = None,
     ) -> Dict[str, Any]:
         """
         Process a chat message and return an AI response.
         Uses Ollama when available, falls back to pattern matching.
+        Persists messages to DB when db session is provided.
         """
-        # Initialize session
-        if session_id not in cls._sessions:
-            cls._sessions[session_id] = []
+        from app.models.chat_session import ChatMessage
 
-        cls._sessions[session_id].append({"role": "user", "content": message})
+        # Load history from DB or fall back to empty
+        history: List[Dict[str, str]] = []
+        if db is not None:
+            try:
+                rows = (
+                    db.query(ChatMessage)
+                    .filter(ChatMessage.session_id == session_id)
+                    .order_by(ChatMessage.created_at.asc())
+                    .all()
+                )
+                history = [{"role": r.role, "content": r.content} for r in rows]
+            except Exception as exc:
+                logger.warning("Failed to load chat history for session %s: %s", session_id, exc)
+
+        history.append({"role": "user", "content": message})
+
+        # Persist user message
+        if db is not None:
+            try:
+                db.add(ChatMessage(session_id=session_id, role="user", content=message))
+                db.commit()
+            except Exception as exc:
+                logger.warning("Failed to save user chat message: %s", exc)
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
 
         # Build context string
         context_str = cls._build_context(context)
 
         # Try LLM first
-        response = cls._try_llm(message, cls._sessions[session_id], context_str)
+        response = cls._try_llm(message, history, context_str)
 
         if not response:
             # Fallback to pattern matching
             response = cls._pattern_match(message, context)
 
-        cls._sessions[session_id].append({"role": "assistant", "content": response})
+        history.append({"role": "assistant", "content": response})
 
-        # Keep session history manageable
-        if len(cls._sessions[session_id]) > 20:
-            cls._sessions[session_id] = cls._sessions[session_id][-20:]
+        # Persist assistant message
+        if db is not None:
+            try:
+                db.add(ChatMessage(session_id=session_id, role="assistant", content=response))
+                db.commit()
+            except Exception as exc:
+                logger.warning("Failed to save assistant chat message: %s", exc)
+                try:
+                    db.rollback()
+                except Exception:
+                    pass
+
+        # Keep history bounded (trim oldest in DB if over 20)
+        if db is not None and len(history) > 20:
+            try:
+                oldest_ids = (
+                    db.query(ChatMessage.id)
+                    .filter(ChatMessage.session_id == session_id)
+                    .order_by(ChatMessage.created_at.asc())
+                    .limit(len(history) - 20)
+                    .all()
+                )
+                if oldest_ids:
+                    db.query(ChatMessage).filter(
+                        ChatMessage.id.in_([r.id for r in oldest_ids])
+                    ).delete(synchronize_session=False)
+                    db.commit()
+            except Exception as exc:
+                logger.warning("Failed to trim old chat messages: %s", exc)
 
         return {
             "response": response,
             "session_id": session_id,
-            "message_count": len(cls._sessions[session_id]),
+            "message_count": len(history),
         }
 
     @classmethod
@@ -139,35 +194,55 @@ class AskDataService:
         return suggestions[:8]
 
     @classmethod
+    def _build_context(cls, context: Dict[str, Any]) -> str:
+        """Serialize the context dict to a concise string for the LLM prompt."""
+        parts = []
+        schemas = context.get("schemas", {})
+        for conn_name, tables in schemas.items():
+            table_list = ", ".join(tables.keys())
+            parts.append(f"Connection '{conn_name}': tables [{table_list}]")
+        diffs = context.get("diffs", {})
+        for diff_key, diff in diffs.items():
+            missing_t = diff.get("missing_tables_in_target", [])
+            missing_s = diff.get("missing_tables_in_source", [])
+            if missing_t or missing_s:
+                parts.append(f"Schema diff '{diff_key}': missing_in_target={missing_t}, missing_in_source={missing_s}")
+        return "\n".join(parts) if parts else "No databases connected."
+
+    @classmethod
     def _try_llm(cls, message: str, history: List[Dict], context: str) -> Optional[str]:
         """Attempt to get response from Ollama."""
-        try:
-            # Build conversation for the LLM
-            system_prompt = f"""You are AskData, an AI database intelligence assistant for the dataPlane platform.
-You help users understand their database schemas, identify issues, and suggest improvements.
-Answer concisely and specifically based on the following database context.
+        system_prompt = (
+            "You are AskData, an AI database intelligence assistant for the dataPlane platform.\n"
+            "Help users understand their database schemas, identify issues, and suggest improvements.\n"
+            "Answer concisely and specifically based on the following database context.\n\n"
+            f"DATABASE CONTEXT:\n{context}\n\n"
+            "Always be specific with table names, column names, and exact findings.\n"
+            "Format your responses with markdown for readability."
+        )
 
-DATABASE CONTEXT:
-{context}
+        conversation = system_prompt + "\n\n"
+        for msg in history[-6:]:
+            role = "User" if msg["role"] == "user" else "AskData"
+            conversation += f"{role}: {msg['content']}\n\n"
+        conversation += "AskData:"
 
-Always be specific with table names, column names, and exact findings.
-Format your responses with markdown for readability."""
-
-            conversation = system_prompt + "\n\n"
-            for msg in history[-6:]:  # Last 3 exchanges
-                role = "User" if msg["role"] == "user" else "AskData"
-                conversation += f"{role}: {msg['content']}\n\n"
-            conversation += "AskData:"
-
-            resp = requests.post(
-                f"{settings.OLLAMA_HOST}/api/generate",
-                json={"model": "llama3", "prompt": conversation, "stream": False},
-                timeout=15,
-            )
-            if resp.status_code == 200:
-                return resp.json().get("response", "").strip()
-        except Exception:
-            pass
+        for attempt in range(settings.OLLAMA_MAX_RETRIES + 1):
+            try:
+                resp = requests.post(
+                    f"{settings.OLLAMA_HOST}/api/generate",
+                    json={"model": settings.OLLAMA_MODEL, "prompt": conversation, "stream": False},
+                    timeout=settings.OLLAMA_TIMEOUT,
+                )
+                if resp.status_code == 200:
+                    return resp.json().get("response", "").strip()
+                logger.warning("Ollama AskData returned status %s on attempt %d", resp.status_code, attempt + 1)
+            except Exception as e:
+                logger.warning("Ollama AskData call failed (attempt %d/%d): %s", attempt + 1, settings.OLLAMA_MAX_RETRIES + 1, e)
+                if attempt < settings.OLLAMA_MAX_RETRIES:
+                    import time
+                    time.sleep(2 ** attempt)
+        logger.info("AskData falling back to pattern matching")
         return None
 
     @classmethod
@@ -276,6 +351,16 @@ Format your responses with markdown for readability."""
             return template
 
     @classmethod
-    def clear_session(cls, session_id: str):
+    def clear_session(cls, session_id: str, db: Optional["Session"] = None) -> None:
         """Clear conversation history for a session."""
-        cls._sessions.pop(session_id, None)
+        if db is not None:
+            from app.models.chat_session import ChatMessage
+            try:
+                db.query(ChatMessage).filter(ChatMessage.session_id == session_id).delete()
+                db.commit()
+            except Exception as exc:
+                logger.warning("Failed to clear chat session %s: %s", session_id, exc)
+                try:
+                    db.rollback()
+                except Exception:
+                    pass

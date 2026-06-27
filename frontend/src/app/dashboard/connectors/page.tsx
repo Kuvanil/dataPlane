@@ -1,128 +1,299 @@
 "use client";
 import { useState, useEffect } from "react";
+import { api, ApiError } from "@/lib/api";
 
-interface Connector { id: number; name: string; type: string; config: any; status?: string; }
+interface Connector {
+  id: number;
+  name: string;
+  type: string;
+  config: Record<string, unknown>;
+  status?: string;
+}
+
+interface SchemaColumn { name: string; type: string; }
+interface SchemaData { id: number; name: string; schema: Record<string, SchemaColumn[]>; }
 
 const TYPE_META: Record<string, { icon: string; color: string; bgColor: string }> = {
-  sqlite:   { icon: "💾", color: "text-blue-400", bgColor: "bg-blue-500/10 border-blue-500/20" },
-  postgres: { icon: "🐘", color: "text-sky-400", bgColor: "bg-sky-500/10 border-sky-500/20" },
+  sqlite:   { icon: "💾", color: "text-blue-400",   bgColor: "bg-blue-500/10 border-blue-500/20" },
+  postgres: { icon: "🐘", color: "text-sky-400",    bgColor: "bg-sky-500/10 border-sky-500/20" },
   mysql:    { icon: "🐬", color: "text-orange-400", bgColor: "bg-orange-500/10 border-orange-500/20" },
-  oracle:   { icon: "🏛️", color: "text-red-400", bgColor: "bg-red-500/10 border-red-500/20" },
+  oracle:   { icon: "🏛️", color: "text-red-400",    bgColor: "bg-red-500/10 border-red-500/20" },
   jdbc:     { icon: "🔗", color: "text-violet-400", bgColor: "bg-violet-500/10 border-violet-500/20" },
+};
+
+const VALID_TYPES = ["sqlite", "postgres", "mysql", "oracle", "jdbc"] as const;
+
+const CONFIG_TEMPLATES: Record<string, string> = {
+  sqlite:   '{"path": "/tmp/my_database.db"}',
+  postgres: '{"host": "localhost", "port": 5432, "dbname": "mydb", "user": "postgres", "password": "secret"}',
+  mysql:    '{"host": "localhost", "port": 3306, "dbname": "mydb", "user": "root", "password": "secret"}',
+  oracle:   '{"host": "localhost", "port": 1521, "service_name": "ORCL", "user": "system", "password": "secret"}',
+  jdbc:     '{"url": "postgresql://user:pass@host:5432/dbname"}',
 };
 
 export default function ConnectorsPage() {
   const [connectors, setConnectors] = useState<Connector[]>([]);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [name, setName] = useState(""); const [type, setType] = useState("sqlite");
-  const [configJson, setConfigJson] = useState('{"path": "/tmp/test.db"}');
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [type, setType] = useState<string>("sqlite");
+  const [configJson, setConfigJson] = useState(CONFIG_TEMPLATES.sqlite);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const [testingId, setTestingId] = useState<number | null>(null);
+  const [testResults, setTestResults] = useState<Record<number, string>>({});
+
+  const [schemaModal, setSchemaModal] = useState<SchemaData | null>(null);
+  const [scanningId, setScanningId] = useState<number | null>(null);
 
   const fetchConnectors = async () => {
+    setLoading(true);
+    setError(null);
     try {
-      const res = await fetch("http://localhost:8000/api/v1/connectors/");
-      if (res.ok) { const data = await res.json(); setConnectors(data.map((c: any) => ({ ...c, status: "Connected" }))); }
-      else throw new Error();
+      const data = await api.get<Connector[]>("/api/v1/connectors/");
+      setConnectors(data.map(c => ({ ...c, status: "Connected" })));
     } catch {
       setConnectors([
-        { id: 1, name: "CRM_Source_Analytics", type: "sqlite", config: { path: "/tmp/crm.db" }, status: "Connected" },
-        { id: 2, name: "Data_Warehouse_Target", type: "sqlite", config: { path: "/tmp/dw.db" }, status: "Connected" },
-        { id: 3, name: "ECommerce_MySQL", type: "sqlite", config: { path: "/tmp/ecom.db" }, status: "Connected" },
-        { id: 4, name: "Finance_Oracle", type: "oracle", config: { host: "localhost-sim", service_name: "FINDB" }, status: "Simulated" },
-        { id: 5, name: "HR_Postgres", type: "postgres", config: { host: "postgres", port: 5432, dbname: "dataplane" }, status: "Connected" },
+        { id: 1, name: "CRM_Source_Analytics",  type: "sqlite", config: { path: "/shared/data/dataplane_crm_source.db" }, status: "Connected" },
+        { id: 2, name: "Data_Warehouse_Target",  type: "sqlite", config: { path: "/shared/data/dataplane_dw_target.db" }, status: "Connected" },
+        { id: 3, name: "ECommerce_MySQL",         type: "sqlite", config: { path: "/shared/data/dataplane_ecommerce.db" }, status: "Connected" },
+        { id: 4, name: "Finance_Oracle",          type: "oracle", config: { host: "localhost-sim", service_name: "FINDB" }, status: "Simulated" },
+        { id: 5, name: "HR_Postgres",             type: "postgres", config: { host: "postgres", port: 5432, dbname: "dataplane" }, status: "Connected" },
       ]);
-    } finally { setLoading(false); }
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => { fetchConnectors(); }, []);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    setCreateError(null);
+
+    let parsedConfig: Record<string, unknown>;
     try {
-      const res = await fetch("http://localhost:8000/api/v1/connectors/", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, type, config: JSON.parse(configJson) }),
-      });
-      if (res.ok) { setIsModalOpen(false); setName(""); fetchConnectors(); }
-    } catch { alert("Failed to create connection. Check config JSON format."); }
+      parsedConfig = JSON.parse(configJson);
+    } catch {
+      setCreateError("Invalid JSON in config field.");
+      return;
+    }
+
+    setCreating(true);
+    try {
+      await api.post("/api/v1/connectors/", { name, type, config: parsedConfig });
+      setIsModalOpen(false);
+      setName("");
+      setConfigJson(CONFIG_TEMPLATES.sqlite);
+      await fetchConnectors();
+    } catch (err) {
+      setCreateError(err instanceof ApiError ? err.message : "Failed to create connector.");
+    } finally {
+      setCreating(false);
+    }
   };
 
-  const configTemplates: Record<string, string> = {
-    sqlite: '{"path": "/tmp/my_database.db"}',
-    postgres: '{"host": "localhost", "port": 5432, "dbname": "mydb", "user": "postgres", "password": "secret"}',
-    mysql: '{"host": "localhost", "port": 3306, "dbname": "mydb", "user": "root", "password": "secret"}',
-    oracle: '{"host": "localhost", "port": 1521, "service_name": "ORCL", "user": "system", "password": "secret"}',
-    jdbc: '{"url": "postgresql://user:pass@host:5432/dbname"}',
+  const handleTest = async (id: number) => {
+    setTestingId(id);
+    setTestResults(prev => ({ ...prev, [id]: "testing" }));
+    try {
+      const result = await api.post<{ status: string }>(`/api/v1/connectors/${id}/test`, {});
+      setTestResults(prev => ({ ...prev, [id]: result.status }));
+    } catch (err) {
+      setTestResults(prev => ({ ...prev, [id]: "failed" }));
+    } finally {
+      setTestingId(null);
+    }
+  };
+
+  const handleScanSchema = async (id: number) => {
+    setScanningId(id);
+    try {
+      const data = await api.get<SchemaData>(`/api/v1/connectors/${id}/schema`);
+      setSchemaModal(data);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Schema scan failed.");
+    } finally {
+      setScanningId(null);
+    }
   };
 
   return (
-    <div className="p-8 flex flex-col gap-6 relative h-full">
+    <div className="p-8 flex flex-col gap-6 relative h-full overflow-y-auto">
       <div className="flex justify-between items-center">
         <div>
           <h3 className="text-lg font-semibold text-zinc-200">Your Connectors</h3>
           <p className="text-xs text-zinc-500">Manage sources and targets — Postgres, MySQL, Oracle, SQLite, JDBC</p>
         </div>
-        <button onClick={() => setIsModalOpen(true)} className="px-4 py-2 text-sm font-semibold text-zinc-950 bg-white rounded-xl hover:bg-zinc-200 transition-all flex items-center gap-2">➕ New Connector</button>
+        <button
+          onClick={() => { setIsModalOpen(true); setCreateError(null); }}
+          className="px-4 py-2 text-sm font-semibold text-zinc-950 bg-white rounded-xl hover:bg-zinc-200 transition-all flex items-center gap-2"
+        >
+          ➕ New Connector
+        </button>
       </div>
+
+      {error && (
+        <div className="p-3 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-300 text-sm flex justify-between items-center">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="text-rose-300/70 hover:text-rose-200 text-xs">✕</button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">Loading connectors...</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {connectors.map((c) => {
-            const meta = TYPE_META[c.type] || TYPE_META.sqlite;
+            const meta = TYPE_META[c.type] ?? TYPE_META.sqlite;
+            const testStatus = testResults[c.id];
             return (
               <div key={c.id} className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800 backdrop-blur-sm flex flex-col gap-4 group hover:border-zinc-700 transition-all">
                 <div className="flex justify-between items-start">
                   <div>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${meta.bgColor} ${meta.color}`}>{meta.icon} {c.type}</span>
+                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${meta.bgColor} ${meta.color}`}>
+                      {meta.icon} {c.type}
+                    </span>
                     <h4 className="font-semibold text-zinc-200 mt-2">{c.name}</h4>
                   </div>
-                  <span className="flex items-center gap-1.5 text-xs text-emerald-400">
-                    <span className="w-1.5 h-1.5 bg-emerald-400 rounded-full" />{c.status || "Active"}
+                  <span className={`flex items-center gap-1.5 text-xs ${testStatus === "connected" ? "text-emerald-400" : testStatus === "failed" ? "text-rose-400" : "text-emerald-400"}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${testStatus === "failed" ? "bg-rose-400" : "bg-emerald-400"}`} />
+                    {testStatus === "connected" ? "Connected" : testStatus === "failed" ? "Failed" : testStatus === "testing" ? "Testing..." : c.status ?? "Active"}
                   </span>
                 </div>
                 <div className="border-t border-zinc-800/50 pt-3 text-xs text-zinc-500">
                   <span className="font-mono text-[10px] truncate block">{JSON.stringify(c.config)}</span>
                 </div>
                 <div className="flex gap-2 mt-2">
-                  <button className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-medium text-zinc-300 transition-colors">Test Conn</button>
-                  <button className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-medium text-zinc-300 transition-colors">Scan Schema</button>
+                  <button
+                    onClick={() => handleTest(c.id)}
+                    disabled={testingId === c.id}
+                    className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-medium text-zinc-300 transition-colors disabled:opacity-50"
+                  >
+                    {testingId === c.id ? "Testing..." : "Test Conn"}
+                  </button>
+                  <button
+                    onClick={() => handleScanSchema(c.id)}
+                    disabled={scanningId === c.id}
+                    className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-medium text-zinc-300 transition-colors disabled:opacity-50"
+                  >
+                    {scanningId === c.id ? "Scanning..." : "Scan Schema"}
+                  </button>
                 </div>
               </div>
             );
           })}
-          <div onClick={() => setIsModalOpen(true)} className="border border-dashed border-zinc-800 rounded-2xl flex flex-col items-center justify-center p-6 text-zinc-500 hover:border-zinc-600 hover:text-zinc-400 cursor-pointer transition-all min-h-[160px]">
-            <span className="text-3xl mb-1">🔌</span><span className="text-sm">Link another Database</span>
+          <div
+            onClick={() => { setIsModalOpen(true); setCreateError(null); }}
+            className="border border-dashed border-zinc-800 rounded-2xl flex flex-col items-center justify-center p-6 text-zinc-500 hover:border-zinc-600 hover:text-zinc-400 cursor-pointer transition-all min-h-[160px]"
+          >
+            <span className="text-3xl mb-1">🔌</span>
+            <span className="text-sm">Link another Database</span>
           </div>
         </div>
       )}
 
+      {/* Create modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
           <div className="w-full max-w-md p-6 rounded-2xl bg-zinc-900 border border-zinc-800 flex flex-col gap-4 shadow-2xl">
             <h3 className="text-lg font-semibold text-zinc-200">New Database Connector</h3>
+            {createError && (
+              <div className="p-2 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-300 text-xs">{createError}</div>
+            )}
             <form onSubmit={handleCreate} className="flex flex-col gap-3">
-              <div className="flex flex-col gap-1"><label className="text-xs text-zinc-400">Connector Name</label>
-                <input value={name} onChange={e => setName(e.target.value)} required placeholder="My_Database" className="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm focus:outline-none focus:border-blue-500 text-zinc-200" />
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-zinc-400">Connector Name</label>
+                <input
+                  value={name}
+                  onChange={e => setName(e.target.value)}
+                  required
+                  placeholder="My_Database"
+                  className="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm focus:outline-none focus:border-blue-500 text-zinc-200"
+                />
               </div>
-              <div className="flex flex-col gap-1"><label className="text-xs text-zinc-400">Type</label>
-                <select value={type} onChange={e => { setType(e.target.value); setConfigJson(configTemplates[e.target.value] || "{}"); }} className="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm focus:outline-none focus:border-blue-500 text-zinc-300">
-                  <option value="sqlite">💾 SQLite</option>
-                  <option value="postgres">🐘 PostgreSQL</option>
-                  <option value="mysql">🐬 MySQL</option>
-                  <option value="oracle">🏛️ Oracle</option>
-                  <option value="jdbc">🔗 JDBC (Generic)</option>
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-zinc-400">Type</label>
+                <select
+                  value={type}
+                  onChange={e => { setType(e.target.value); setConfigJson(CONFIG_TEMPLATES[e.target.value] ?? "{}"); }}
+                  className="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm focus:outline-none focus:border-blue-500 text-zinc-300"
+                >
+                  {VALID_TYPES.map(t => (
+                    <option key={t} value={t}>{TYPE_META[t]?.icon} {t}</option>
+                  ))}
                 </select>
               </div>
-              <div className="flex flex-col gap-1"><label className="text-xs text-zinc-400">Config JSON</label>
-                <textarea value={configJson} onChange={e => setConfigJson(e.target.value)} required rows={4} className="px-3 py-2 font-mono text-xs rounded-lg bg-zinc-800 border border-zinc-700 focus:outline-none focus:border-blue-500 text-zinc-300" />
+              <div className="flex flex-col gap-1">
+                <label className="text-xs text-zinc-400">Config JSON</label>
+                <textarea
+                  value={configJson}
+                  onChange={e => setConfigJson(e.target.value)}
+                  required
+                  rows={4}
+                  className="px-3 py-2 font-mono text-xs rounded-lg bg-zinc-800 border border-zinc-700 focus:outline-none focus:border-blue-500 text-zinc-300"
+                />
               </div>
               <div className="flex gap-2 mt-4">
-                <button type="button" onClick={() => setIsModalOpen(false)} className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-semibold text-zinc-400">Cancel</button>
-                <button type="submit" className="flex-1 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl text-sm font-semibold text-white">Add Connector</button>
+                <button
+                  type="button"
+                  onClick={() => setIsModalOpen(false)}
+                  className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-semibold text-zinc-400"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creating}
+                  className="flex-1 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl text-sm font-semibold text-white disabled:opacity-50"
+                >
+                  {creating ? "Creating..." : "Add Connector"}
+                </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Schema modal */}
+      {schemaModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="w-full max-w-2xl max-h-[80vh] flex flex-col rounded-2xl bg-zinc-900 border border-zinc-800 shadow-2xl overflow-hidden">
+            <div className="flex justify-between items-center p-5 border-b border-zinc-800">
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-200">{schemaModal.name} — Schema</h3>
+                <p className="text-xs text-zinc-500">{Object.keys(schemaModal.schema).length} tables</p>
+              </div>
+              <button onClick={() => setSchemaModal(null)} className="text-zinc-500 hover:text-zinc-300 text-xs">✕ Close</button>
+            </div>
+            <div className="overflow-y-auto p-5 flex flex-col gap-4">
+              {Object.entries(schemaModal.schema).map(([table, cols]) => (
+                <div key={table} className="rounded-xl border border-zinc-800 overflow-hidden">
+                  <div className="px-4 py-2 bg-zinc-800/40 text-xs font-semibold text-zinc-300 font-mono">
+                    {table} <span className="text-zinc-500 font-normal">({cols.length} cols)</span>
+                  </div>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-zinc-800">
+                        <th className="px-4 py-2 text-left text-zinc-500 font-medium">Column</th>
+                        <th className="px-4 py-2 text-left text-zinc-500 font-medium">Type</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {cols.map(col => (
+                        <tr key={col.name} className="border-b border-zinc-800/50 hover:bg-zinc-800/20">
+                          <td className="px-4 py-1.5 font-mono text-zinc-300">{col.name}</td>
+                          <td className="px-4 py-1.5 font-mono text-zinc-500">{col.type}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}

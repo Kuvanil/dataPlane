@@ -1,3 +1,5 @@
+import logging
+import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
@@ -10,7 +12,8 @@ from app.services.security_service import SecurityService
 from app.services.ai_service import AIService
 from app.services.askdata_service import AskDataService
 from app.tasks.ai_tasks import nl2sql_task
-import uuid
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -39,6 +42,7 @@ def chat(req: ChatRequest, db: Session = Depends(get_db)):
             message=req.message,
             session_id=session_id,
             context=context,
+            db=db,
         )
         return response
     except Exception as e:
@@ -69,9 +73,9 @@ def get_suggestions(db: Session = Depends(get_db)):
 
 
 @router.delete("/session/{session_id}")
-def clear_session(session_id: str):
+def clear_session(session_id: str, db: Session = Depends(get_db)):
     """Clear a chat session's history."""
-    AskDataService.clear_session(session_id)
+    AskDataService.clear_session(session_id, db=db)
     return {"status": "cleared", "session_id": session_id}
 
 
@@ -88,14 +92,10 @@ def _build_full_context(db: Session) -> Dict[str, Any]:
         try:
             schema = SchemaService.get_full_schema(conn)
             schemas[conn.name] = schema
+            classifications[conn.name] = SecurityService.classify_schema(schema)
+        except Exception as e:
+            logger.warning("Failed to load schema for connection '%s': %s", conn.name, e)
 
-            # Classify each schema
-            cls_data = SecurityService.classify_schema(schema)
-            classifications[conn.name] = cls_data
-        except Exception:
-            continue
-
-    # Run diffs between pairs of connections
     conn_list = list(connections)
     for i in range(len(conn_list)):
         for j in range(i + 1, len(conn_list)):
@@ -106,7 +106,6 @@ def _build_full_context(db: Session) -> Dict[str, Any]:
                 diff_key = f"{conn_list[i].name} ↔ {conn_list[j].name}"
                 diffs[diff_key] = diff_result
 
-                # Run AI matching for each matching table pair
                 for src_table in s1:
                     for tgt_table in s2:
                         try:
@@ -118,10 +117,10 @@ def _build_full_context(db: Session) -> Dict[str, Any]:
                             )
                             match_key = f"{src_table} → {tgt_table}"
                             matches[match_key] = match_result
-                        except Exception:
-                            continue
-            except Exception:
-                continue
+                        except Exception as e:
+                            logger.warning("AI match failed for %s → %s: %s", src_table, tgt_table, e)
+            except Exception as e:
+                logger.warning("Diff failed for '%s' ↔ '%s': %s", conn_list[i].name, conn_list[j].name, e)
 
     return {
         "schemas": schemas,

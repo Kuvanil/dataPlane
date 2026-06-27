@@ -18,6 +18,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { id: "pipelines", label: "Pipelines", icon: "🔗", href: "/dashboard/pipelines" },
     { id: "autopilot", label: "AI Autopilot", icon: "⚙️", href: "/dashboard/autopilot" },
     { id: "security", label: "Security", icon: "🛡️", href: "/dashboard/security" },
+    { id: "audit", label: "Audit Trail", icon: "📋", href: "/dashboard/audit" },
   ];
 
   return (
@@ -46,7 +47,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse" />
             <span>Admin Session</span>
           </div>
-          <button onClick={() => router.push("/")} className="w-full py-2 hover:bg-zinc-800 rounded-xl text-xs text-zinc-400 font-medium border border-transparent hover:border-zinc-700 transition-all flex items-center justify-center gap-2">🚪 Log Out</button>
+          <button onClick={() => { localStorage.removeItem("dp_token"); router.push("/"); }} className="w-full py-2 hover:bg-zinc-800 rounded-xl text-xs text-zinc-400 font-medium border border-transparent hover:border-zinc-700 transition-all flex items-center justify-center gap-2">🚪 Log Out</button>
         </div>
       </aside>
       <main className="flex-1 flex flex-col overflow-y-auto">

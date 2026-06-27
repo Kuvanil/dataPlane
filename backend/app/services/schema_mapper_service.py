@@ -5,11 +5,14 @@ Parses English-language mapping instructions and generates migration SQL.
 Provides visual mapping data structures for the frontend mapper UI.
 """
 
+import logging
 import re
 import json
 import requests
 from typing import List, Dict, Any, Optional
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 
 class SchemaMapperService:
@@ -155,20 +158,26 @@ Return a JSON array of rules:
 
 JSON:"""
 
-        try:
-            resp = requests.post(
-                f"{settings.OLLAMA_HOST}/api/generate",
-                json={"model": "llama3", "prompt": prompt, "stream": False, "format": "json"},
-                timeout=15,
-            )
-            if resp.status_code == 200:
-                result = json.loads(resp.json().get("response", "[]"))
-                if isinstance(result, list):
-                    return result
-                if isinstance(result, dict) and "rules" in result:
-                    return result["rules"]
-        except Exception:
-            pass
+        import time
+        for attempt in range(settings.OLLAMA_MAX_RETRIES + 1):
+            try:
+                resp = requests.post(
+                    f"{settings.OLLAMA_HOST}/api/generate",
+                    json={"model": settings.OLLAMA_MODEL, "prompt": prompt, "stream": False, "format": "json"},
+                    timeout=settings.OLLAMA_TIMEOUT,
+                )
+                if resp.status_code == 200:
+                    result = json.loads(resp.json().get("response", "[]"))
+                    if isinstance(result, list):
+                        return result
+                    if isinstance(result, dict) and "rules" in result:
+                        return result["rules"]
+                logger.warning("SchemaMapper Ollama returned status %s on attempt %d", resp.status_code, attempt + 1)
+            except Exception as e:
+                logger.warning("SchemaMapper Ollama call failed (attempt %d/%d): %s", attempt + 1, settings.OLLAMA_MAX_RETRIES + 1, e)
+                if attempt < settings.OLLAMA_MAX_RETRIES:
+                    time.sleep(2 ** attempt)
+        logger.info("SchemaMapper falling back to rule-based parsing")
         return []
 
     # ── SQL Generation ────────────────────────────────────────

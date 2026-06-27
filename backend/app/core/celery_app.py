@@ -1,6 +1,7 @@
 """Celery application instance for async task processing."""
 
 from celery import Celery
+from celery.schedules import crontab
 from app.core.config import settings
 
 celery_app = Celery(
@@ -15,4 +16,11 @@ celery_app.conf.update(
     accept_content=["json"],
     result_serializer="json",
     broker_connection_retry_on_startup=True,
+    beat_schedule={
+        "check-schema-drift": {
+            "task": "app.tasks.ai_tasks.check_schema_drift_task",
+            "schedule": crontab(minute=f"*/{settings.SCHEMA_DRIFT_INTERVAL_MINUTES}"),
+        },
+    },
+    timezone="UTC",
 )

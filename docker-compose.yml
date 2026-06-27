@@ -1,5 +1,27 @@
 name: dataplane
 
+# Shared env block — override any value by adding it to a .env file
+# (copy .env.example → .env and edit before first run)
+x-backend-env: &backend-env
+  DATABASE_URL: ${DATABASE_URL:-postgresql://postgres:postgres@postgres:5432/dataplane}
+  CELERY_BROKER_URL: ${CELERY_BROKER_URL:-redis://broker:6379/0}
+  CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND:-redis://broker:6379/0}
+  OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+  OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3}
+  OLLAMA_TIMEOUT: ${OLLAMA_TIMEOUT:-15}
+  OLLAMA_MAX_RETRIES: ${OLLAMA_MAX_RETRIES:-2}
+  DB_HOST: postgres
+  DB_PORT: "5432"
+  DB_USER: ${DB_USER:-postgres}
+  DB_PASSWORD: ${DB_PASSWORD:-postgres}
+  REDIS_HOST: broker
+  REDIS_PORT: "6379"
+  SECRET_KEY: ${SECRET_KEY:-change-me-in-production-use-a-long-random-string}
+  ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+  ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-admin123}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  SCHEMA_DRIFT_INTERVAL_MINUTES: ${SCHEMA_DRIFT_INTERVAL_MINUTES:-60}
+
 services:
   # ── PostgreSQL ─────────────────────────────────────────────
   postgres:
@@ -7,8 +29,8 @@ services:
     container_name: dataplane-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-postgres}
       POSTGRES_DB: dataplane
     volumes:
       - pgdata:/var/lib/postgresql/data
@@ -17,12 +39,19 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 128m
 
   # ── Redis Broker ───────────────────────────────────────────
   broker:
     image: redis:7-alpine
     container_name: dataplane-broker
     restart: unless-stopped
+    command: redis-server --maxmemory 128mb --maxmemory-policy allkeys-lru
     volumes:
       - redisdata:/data
     healthcheck:
@@ -30,6 +59,12 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 192m
+        reservations:
+          memory: 64m
 
   # ── FastAPI Backend ────────────────────────────────────────
   api:
@@ -41,15 +76,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/dataplane
-      CELERY_BROKER_URL: redis://broker:6379/0
-      CELERY_RESULT_BACKEND: redis://broker:6379/0
-      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: postgres
-      REDIS_HOST: broker
-      REDIS_PORT: 6379
+      <<: *backend-env
     volumes:
       - shared_data:/shared/data
     depends_on:
@@ -62,6 +89,13 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 128m
 
   # ── Celery Worker ──────────────────────────────────────────
   worker:
@@ -72,15 +106,7 @@ services:
     restart: unless-stopped
     command: celery -A app.core.celery_app worker --loglevel=info --concurrency=2
     environment:
-      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/dataplane
-      CELERY_BROKER_URL: redis://broker:6379/0
-      CELERY_RESULT_BACKEND: redis://broker:6379/0
-      OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
-      DB_HOST: postgres
-      DB_PORT: 5432
-      DB_USER: postgres
-      REDIS_HOST: broker
-      REDIS_PORT: 6379
+      <<: *backend-env
     volumes:
       - shared_data:/shared/data
     depends_on:
@@ -93,6 +119,43 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 128m
+
+  # ── Celery Beat Scheduler ─────────────────────────────────
+  beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: dataplane-beat
+    restart: unless-stopped
+    command: celery -A app.core.celery_app beat --loglevel=info
+    environment:
+      <<: *backend-env
+    volumes:
+      - shared_data:/shared/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      broker:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import celery; print('ok')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+        reservations:
+          memory: 64m
 
   # ── Frontend (nginx) ───────────────────────────────────────
   frontend:
@@ -111,6 +174,12 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 128m
+        reservations:
+          memory: 32m
 
 volumes:
   pgdata:

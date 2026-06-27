@@ -1,17 +1,24 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import { api, ApiError } from "@/lib/api";
 
 interface QueryResult {
   query: string;
   sql: string;
   method: string;
   confidence: number;
-  results: any;
+  results: Record<string, unknown>[] | Record<string, unknown> | null;
   row_count?: number;
   error?: string;
   report_type?: string;
   connection?: string;
+}
+
+interface Connector {
+  id: number;
+  name: string;
+  type: string;
 }
 
 const TEMPLATES = [
@@ -28,12 +35,11 @@ export default function QueryStudioPage() {
   const [connectionId, setConnectionId] = useState(1);
   const [results, setResults] = useState<QueryResult[]>([]);
   const [loading, setLoading] = useState(false);
-  const [connections, setConnections] = useState<any[]>([]);
+  const [connections, setConnections] = useState<Connector[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    fetch("http://localhost:8000/api/v1/connectors/")
-      .then(r => r.ok ? r.json() : [])
+    api.get<Connector[]>("/api/v1/connectors/")
       .then(data => setConnections(data))
       .catch(() => {
         setConnections([
@@ -51,20 +57,21 @@ export default function QueryStudioPage() {
     if (!queryText.trim()) return;
     setLoading(true);
     try {
-      const res = await fetch("http://localhost:8000/api/v1/query/nl2sql", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ query: queryText, connection_id: connectionId, execute: true }),
+      const data = await api.post<QueryResult>("/api/v1/query/nl2sql", {
+        query: queryText,
+        connection_id: connectionId,
+        execute: true,
       });
-      if (res.ok) {
-        const data = await res.json();
-        setResults(prev => [data, ...prev]);
-      }
+      setResults(prev => [data, ...prev]);
     } catch (err) {
-      // Offline demo fallback
+      const message = err instanceof ApiError ? err.message : "Backend API is not reachable. Start docker-compose to see live results.";
       setResults(prev => [{
-        query: queryText, sql: "-- Demo mode: API not connected", method: "demo",
-        confidence: 0, results: [], error: "Backend API is not reachable. Start docker-compose to see live results.",
+        query: queryText,
+        sql: "-- Query failed",
+        method: "error",
+        confidence: 0,
+        results: [],
+        error: message,
       }, ...prev]);
     } finally {
       setLoading(false);
@@ -78,10 +85,12 @@ export default function QueryStudioPage() {
       return <div className="p-3 rounded-lg bg-red-500/5 border border-red-500/20 text-red-400 text-xs">{res.error}</div>;
     }
     if (res.report_type === "pii_scan" && Array.isArray(res.results)) {
+      type PiiRow = { table: string; column: string; pii_keyword: string };
+      const piiRows = res.results as PiiRow[];
       return (
         <div className="flex flex-col gap-1">
-          <div className="text-xs font-semibold text-amber-400 mb-1">🛡️ PII Scan Results ({res.results.length} findings)</div>
-          {res.results.map((r: any, i: number) => (
+          <div className="text-xs font-semibold text-amber-400 mb-1">🛡️ PII Scan Results ({piiRows.length} findings)</div>
+          {piiRows.map((r, i) => (
             <div key={i} className="flex items-center gap-3 text-xs p-2 rounded-lg bg-zinc-800/30">
               <span className="font-mono text-red-400">{r.table}.{r.column}</span>
               <span className="text-zinc-500">matched: <span className="text-amber-400">{r.pii_keyword}</span></span>
@@ -90,8 +99,9 @@ export default function QueryStudioPage() {
         </div>
       );
     }
-    if (res.report_type === "health" && typeof res.results === "object" && !Array.isArray(res.results)) {
-      const h = res.results;
+    if (res.report_type === "health" && res.results !== null && typeof res.results === "object" && !Array.isArray(res.results)) {
+      type HealthResult = { total_tables: number; total_columns: number; nullable_columns: number; primary_keys: number; health_score: number; tables_without_pk?: string[] };
+      const h = res.results as HealthResult;
       return (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           {[
@@ -106,7 +116,7 @@ export default function QueryStudioPage() {
               <div className="text-[10px] text-zinc-500">{m.label}</div>
             </div>
           ))}
-          {h.tables_without_pk?.length > 0 && (
+          {h.tables_without_pk && h.tables_without_pk.length > 0 && (
             <div className="col-span-full text-xs text-amber-400">
               ⚠️ Tables without PK: {h.tables_without_pk.join(", ")}
             </div>
@@ -116,7 +126,8 @@ export default function QueryStudioPage() {
     }
     // Table results
     if (Array.isArray(res.results) && res.results.length > 0) {
-      const keys = Object.keys(res.results[0]);
+      const rows = res.results as Record<string, unknown>[];
+      const keys = Object.keys(rows[0]);
       return (
         <div className="overflow-x-auto rounded-lg border border-zinc-800">
           <table className="w-full text-xs border-collapse">
@@ -126,15 +137,15 @@ export default function QueryStudioPage() {
               </tr>
             </thead>
             <tbody>
-              {res.results.slice(0, 50).map((row: any, i: number) => (
+              {rows.slice(0, 50).map((row, i) => (
                 <tr key={i} className="hover:bg-zinc-800/20 transition-colors">
                   {keys.map(k => <td key={k} className="p-2 text-zinc-300 font-mono border-b border-zinc-800/40">{String(row[k] ?? "")}</td>)}
                 </tr>
               ))}
             </tbody>
           </table>
-          {res.results.length > 50 && (
-            <div className="p-2 text-center text-[10px] text-zinc-500">Showing 50 of {res.results.length} rows</div>
+          {rows.length > 50 && (
+            <div className="p-2 text-center text-[10px] text-zinc-500">Showing 50 of {rows.length} rows</div>
           )}
         </div>
       );

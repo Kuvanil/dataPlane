@@ -13,6 +13,7 @@ Orchestrates a synchronous `source -> ai_matcher -> target` pipeline:
        Studio UI.
 """
 
+import logging
 import os
 import sqlite3
 from collections import deque
@@ -23,6 +24,8 @@ from app.models.connection import DBConnection
 from app.services.ai_service import AIService
 from app.services.schema_mapper_service import SchemaMapperService
 from app.services.schema_service import SchemaService
+
+logger = logging.getLogger(__name__)
 
 
 PIPELINE_NODE_TYPES = {"source", "ai_matcher", "target"}
@@ -52,6 +55,7 @@ class PipelineService:
         dict
             Result envelope (see module docstring).
         """
+        logger.info("[pipeline] stage=validate nodes=%d edges=%d", len(nodes), len(edges))
         source_node, target_node, ai_matcher_node = PipelineService._validate_graph(nodes, edges)
 
         source_config = (source_node.get("config") or {})
@@ -59,27 +63,25 @@ class PipelineService:
         source_id = source_config.get("connection_id")
         target_id = target_config.get("connection_id")
 
-        # Defensive: the validators above already raised, but keep the type
-        # narrow for the type-checker / IDE.
         if not isinstance(source_id, int) or source_id <= 0:
             raise ValueError("Source node must have a connection_id configured")
         if not isinstance(target_id, int) or target_id <= 0:
             raise ValueError("Target node must have a connection_id configured")
 
+        logger.info("[pipeline] stage=load_connections source_id=%d target_id=%d", source_id, target_id)
         source_conn, target_conn = PipelineService._load_connections(source_id, target_id)
 
+        logger.info("[pipeline] stage=extract_schemas source='%s' target='%s'", source_conn.name, target_conn.name)
         source_schema = SchemaService.get_full_schema(source_conn)
         target_schema = SchemaService.get_full_schema(target_conn)
+        logger.info("[pipeline] source_tables=%d target_tables=%d", len(source_schema), len(target_schema))
 
-        # ── On-the-fly target creation (empty SQLite target) ────────
-        # When the target is SQLite and its schema is empty, synthesise
-        # an identity target schema from the source and generate CREATE
-        # TABLE DDL directly. Source must also be SQLite.
         on_the_fly_ddl: List[str] = []
         used_identity_matching = False
         if (target_conn.type or "").lower() == "sqlite" and not target_schema:
             if (source_conn.type or "").lower() != "sqlite":
                 raise ValueError("On-the-fly target creation requires the source to be SQLite")
+            logger.info("[pipeline] stage=create_target_on_the_fly tables=%d", len(source_schema))
             synthetic_target_schema, on_the_fly_ddl = PipelineService._create_target_on_the_fly(
                 source_schema, target_conn
             )
@@ -87,24 +89,31 @@ class PipelineService:
             used_identity_matching = True
 
         if used_identity_matching:
-            # Freshly-created target mirrors the source one-to-one.
+            logger.info("[pipeline] stage=identity_matching")
             table_mappings, unmatched_source, unmatched_target = PipelineService._run_identity_matching(
                 source_schema, target_schema
             )
         elif ai_matcher_node is not None:
+            logger.info("[pipeline] stage=ai_matching")
             table_mappings, unmatched_source, unmatched_target = PipelineService._run_ai_matching(
                 source_schema, target_schema
             )
         else:
+            logger.info("[pipeline] stage=no_matching (no ai_matcher node)")
             table_mappings, unmatched_source, unmatched_target = [], [], list(target_schema.keys())
 
+        logger.info(
+            "[pipeline] stage=matching_complete matched=%d unmatched_source=%d unmatched_target=%d",
+            len(table_mappings), len(unmatched_source), len(unmatched_target),
+        )
+
+        logger.info("[pipeline] stage=generate_migration_sql")
         mapping_rules = PipelineService._build_mapping_rules(table_mappings)
         migration_sql = SchemaMapperService.generate_migration_sql(
             mappings=mapping_rules,
             target_db_type="sqlite",
         )
 
-        # Prepend the on-the-fly CREATE TABLE DDL when applicable.
         if on_the_fly_ddl:
             existing_ddl = list(migration_sql.get("ddl", []))
             existing_dml = list(migration_sql.get("dml", []))
@@ -113,17 +122,18 @@ class PipelineService:
                 "ddl": list(on_the_fly_ddl) + existing_ddl,
                 "dml": existing_dml,
                 "warnings": existing_warnings,
-                "total_statements": len(on_the_fly_ddl)
-                + len(existing_ddl)
-                + len(existing_dml),
+                "total_statements": len(on_the_fly_ddl) + len(existing_ddl) + len(existing_dml),
             }
 
         rows_copied: Dict[str, int] = {}
         if on_the_fly_ddl:
+            logger.info("[pipeline] stage=execute_migration ddl_statements=%d", len(on_the_fly_ddl))
             rows_copied = PipelineService._execute_target_migration(
                 source_conn, target_conn, table_mappings, on_the_fly_ddl
             )
+            logger.info("[pipeline] stage=migration_complete total_rows_copied=%d", sum(rows_copied.values()))
 
+        logger.info("[pipeline] stage=done status=success")
         return {
             "status": "success",
             "source": source_conn.name,

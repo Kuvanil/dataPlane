@@ -8,14 +8,32 @@ export default function LoginPage() {
   const [email, setEmail] = useState("admin@dataplane.ai");
   const [password, setPassword] = useState("admin123");
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
   const router = useRouter();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email === "admin@dataplane.ai" && password === "admin123") {
+    setError("");
+    setLoading(true);
+    try {
+      const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+      const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        setError(body?.detail ?? "Login failed");
+        return;
+      }
+      const data = await res.json();
+      localStorage.setItem("dp_token", data.access_token);
       router.push("/dashboard");
-    } else {
-      setError("Invalid credentials. Use admin@dataplane.ai / admin123");
+    } catch {
+      setError("Unable to connect to server. Is the backend running?");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -66,9 +84,10 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="w-full mt-2 py-2.5 text-sm font-semibold text-zinc-950 bg-gradient-to-r from-blue-400 to-indigo-500 rounded-xl hover:opacity-90 transition-all shadow-md flex items-center justify-center"
+            disabled={loading}
+            className="w-full mt-2 py-2.5 text-sm font-semibold text-zinc-950 bg-gradient-to-r from-blue-400 to-indigo-500 rounded-xl hover:opacity-90 transition-all shadow-md flex items-center justify-center disabled:opacity-60"
           >
-            Sign In
+            {loading ? "Signing in..." : "Sign In"}
           </button>
         </form>
 
