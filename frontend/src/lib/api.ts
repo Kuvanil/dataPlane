@@ -49,6 +49,20 @@ export const api = {
     return res.json() as Promise<T>;
   },
 
+  async put<T>(path: string, body: unknown): Promise<T> {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "PUT",
+      headers: authHeaders(true),
+      body: JSON.stringify(body),
+    });
+    if (res.status === 401) { handle401(); throw new ApiError(401, "Unauthorized"); }
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, errBody?.detail ?? res.statusText);
+    }
+    return res.json() as Promise<T>;
+  },
+
   async delete(path: string): Promise<void> {
     const res = await fetch(`${API_BASE}${path}`, {
       method: "DELETE",
