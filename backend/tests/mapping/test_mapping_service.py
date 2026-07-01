@@ -449,7 +449,8 @@ def test_accept_suggestion_creates_edge_and_audit(db, admin, seeded_connections)
     edge = MappingService.accept_suggestion(
         db, m.id, sug.id, {"kind": "direct"}, actor=admin.email,
     )
-    assert edge.ai_confidence == 92.0
+    # ai_confidence is normalized to 0.0-1.0 (contract §3).
+    assert edge.ai_confidence == pytest.approx(0.92)
     assert edge.origin == "ai_accepted"
     db.refresh(sug)
     assert sug.status == "accepted"

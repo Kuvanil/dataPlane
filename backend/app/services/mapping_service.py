@@ -319,7 +319,12 @@ class MappingService:
             origin="ai_accepted",
             actor=actor,
         )
-        edge.ai_confidence = sug.confidence
+        # Normalize ai_confidence to the contract's 0.0-1.0 scale.
+        # AISuggestion.confidence is 0-100 (matches the percentage UI shows);
+        # the exported artifact and the contract doc use the 0-1 fraction.
+        edge.ai_confidence = (
+            sug.confidence / 100.0 if sug.confidence > 1 else sug.confidence
+        )
         sug.status = "accepted"
         sug.accepted_edge_id = edge.id
         sug.decided_at = datetime.now(timezone.utc)
@@ -465,7 +470,7 @@ class MappingService:
     def export_json(db: Session, mapping_id: int, *, actor: str,
                     version_id: Optional[int] = None) -> Dict[str, Any]:
         m = MappingService.get_mapping(db, mapping_id)
-        if version_id:
+        if version_id is not None:
             v = (
                 db.query(MappingVersion)
                 .filter(
@@ -474,9 +479,14 @@ class MappingService:
                 )
                 .first()
             )
+            if v is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"version {version_id} not found for mapping {m.id}",
+                )
         else:
             v = m.current_version
-        if not v:
+        if v is None:
             raise HTTPException(
                 status_code=409, detail="no published version to export",
             )

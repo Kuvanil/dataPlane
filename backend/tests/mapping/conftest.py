@@ -14,6 +14,7 @@ os.environ.setdefault("OLLAMA_HOST", "http://localhost:11434")
 os.environ.setdefault("OLLAMA_MODEL", "llama3")
 os.environ.setdefault("CELERY_BROKER_URL", "memory://")
 os.environ.setdefault("CELERY_RESULT_BACKEND", "cache+memory://")
+os.environ.setdefault("CELERY_TASK_ALWAYS_EAGER", "True")
 os.environ.setdefault("SECRET_KEY", "test-secret")
 
 
