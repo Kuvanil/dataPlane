@@ -163,14 +163,35 @@ function CreateMappingModal({
           setTargetId(data[0].id);
         }
       })
-      .catch(() => {
-        setConnectors([
-          { id: 1, name: "CRM_Source_Analytics", type: "sqlite" },
-          { id: 2, name: "Data_Warehouse_Target", type: "sqlite" },
-          { id: 3, name: "ECommerce_MySQL", type: "sqlite" },
-          { id: 4, name: "Finance_Oracle", type: "oracle" },
-          { id: 5, name: "HR_Postgres", type: "postgres" },
-        ]);
+      .catch((err: unknown) => {
+        // Review §11.7: NEVER fabricate production-shaped connector data on
+        // a failed API call. The previous behaviour silently injected five
+        // hardcoded connections, letting a user create a mapping draft
+        // against IDs that don't exist in the system.
+        //
+        // Demo mode opt-in: when NEXT_PUBLIC_DEMO_MODE === "1", keep the
+        // dev convenience of a hardcoded list so local exploration works
+        // without a live backend. Default is OFF in production.
+        const demoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "1";
+        if (demoMode) {
+          setConnectors([
+            { id: 1, name: "CRM_Source_Analytics", type: "sqlite" },
+            { id: 2, name: "Data_Warehouse_Target", type: "sqlite" },
+            { id: 3, name: "ECommerce_MySQL", type: "sqlite" },
+            { id: 4, name: "Finance_Oracle", type: "oracle" },
+            { id: 5, name: "HR_Postgres", type: "postgres" },
+          ]);
+        } else {
+          const message =
+            err instanceof Error
+              ? err.message
+              : "Failed to load connections from the backend.";
+          setError(
+            `Could not load connections: ${message}. ` +
+              `Set NEXT_PUBLIC_DEMO_MODE=1 in .env.local for offline demo data.`,
+          );
+          setConnectors([]);
+        }
       });
   }, []);
 
