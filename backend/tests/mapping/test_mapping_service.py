@@ -461,3 +461,100 @@ def test_accept_suggestion_creates_edge_and_audit(db, admin, seeded_connections)
     )
     assert audit is not None
     assert audit.payload["confidence"] == 92.0
+
+
+def test_accept_suggestion_blocks_second_suggestion_with_same_source(
+    db, admin, seeded_connections,
+):
+    """Review §11.4: suggestion acceptance cannot create many-to-many mappings.
+
+    Creates two AISuggestion rows that both reference the same source
+    column (s1.c1) for two DIFFERENT target columns (t1.c1, t1.c2).
+    Accepting the first is fine. Accepting the second must be rejected
+    with HTTP 409 by the shared FR3 guard — the prior implementation
+    skipped the guard on the suggestion path and let N:M mappings slip
+    through silently.
+    """
+    from app.models.mapping import AISuggestion
+    src, tgt = seeded_connections
+    m = MappingService.create_mapping(
+        db, source_id=src.id, target_id=tgt.id,
+        name="NN bypass test", actor=admin.email,
+    )
+    sug1 = AISuggestion(
+        mapping_id=m.id,
+        target_table="t1", target_column="c1", target_type="TEXT",
+        source_table="s1", source_column="c1", source_type="TEXT",
+        confidence=90.0, reason="first", status="pending",
+    )
+    sug2 = AISuggestion(
+        mapping_id=m.id,
+        target_table="t1", target_column="c2", target_type="INTEGER",
+        source_table="s1", source_column="c1", source_type="TEXT",
+        confidence=85.0, reason="second", status="pending",
+    )
+    db.add_all([sug1, sug2])
+    db.commit()
+    db.refresh(sug1)
+    db.refresh(sug2)
+
+    # First acceptance succeeds.
+    edge1 = MappingService.accept_suggestion(
+        db, m.id, sug1.id, {"kind": "direct"}, actor=admin.email,
+    )
+    assert edge1.target_table == "t1"
+    assert edge1.target_column == "c1"
+
+    # Second acceptance — same source column, different target column —
+    # must be blocked by the shared FR3 many-to-many guard.
+    with pytest.raises(HTTPException) as e:
+        MappingService.accept_suggestion(
+            db, m.id, sug2.id, {"kind": "direct"}, actor=admin.email,
+        )
+    assert e.value.status_code == 409
+    assert "many-to-many" in e.value.detail.lower()
+
+    # sug2 must remain pending — the failed accept must not have side-effects.
+    db.refresh(sug2)
+    assert sug2.status == "pending"
+
+
+def test_check_no_many_to_many_is_independent_helper(db, admin, seeded_connections):
+    """The extracted _check_no_many_to_many helper works in isolation.
+
+    Smoke test: calling it with a non-conflicting target passes
+    silently; calling it with a conflicting one raises 409.
+    """
+    src, tgt = seeded_connections
+    m = MappingService.create_mapping(
+        db, source_id=src.id, target_id=tgt.id,
+        name="Helper smoke", actor=admin.email,
+    )
+    # First edge — no conflict.
+    MappingService._check_no_many_to_many(
+        db, m.id,
+        target={"table": "t1", "column": "c1"},
+        sources=[{"table": "s1", "column": "c1"}],
+    )
+    # Add a real edge so there's something to conflict against.
+    MappingService.add_edge(
+        db, m.id,
+        target={"table": "t1", "column": "c1"},
+        sources=[{"table": "s1", "column": "c1"}],
+        transformation={"kind": "direct"},
+        actor=admin.email,
+    )
+    # Same source, different target — conflict.
+    with pytest.raises(HTTPException) as e:
+        MappingService._check_no_many_to_many(
+            db, m.id,
+            target={"table": "t1", "column": "c2"},
+            sources=[{"table": "s1", "column": "c1"}],
+        )
+    assert e.value.status_code == 409
+    # Same source, same target — allowed (re-mapping the same edge).
+    MappingService._check_no_many_to_many(
+        db, m.id,
+        target={"table": "t1", "column": "c1"},
+        sources=[{"table": "s1", "column": "c1"}],
+    )

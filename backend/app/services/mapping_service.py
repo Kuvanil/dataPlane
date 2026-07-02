@@ -122,29 +122,12 @@ class MappingService:
                 status_code=422, detail="at least one source column is required",
             )
 
-        # FR3: enforce 1:1 / N:1.
-        # For each candidate source column, check whether it is already mapped
-        # to a DIFFERENT target column within this mapping's draft.
-        target_key = (target["table"], target["column"])
-        existing = (
-            db.query(FieldMapping)
-            .filter(FieldMapping.mapping_id == mapping_id,
-                    FieldMapping.version_id.is_(None))
-            .all()
-        )
-        for src in sources:
-            src_key = (src["table"], src["column"])
-            for e in existing:
-                e_target_key = (e.target_table, e.target_column)
-                for es in (e.sources or []):
-                    if (es.get("table"), es.get("column")) == src_key and e_target_key != target_key:
-                        raise HTTPException(
-                            status_code=409,
-                            detail=(
-                                f"source {src_key} already mapped to "
-                                f"{e_target_key}; many-to-many is not supported"
-                            ),
-                        )
+        # FR3: enforce 1:1 / N:1. Shared with _add_edge_internal (used by
+        # accept_suggestion) — review §11.4: the prior implementation
+        # skipped this guard on the suggestion path, which let users accept
+        # two suggestions that both referenced the same source column for
+        # different targets and silently violate many-to-many.
+        MappingService._check_no_many_to_many(db, mapping_id, target, sources)
 
         try:
             parse(transformation or {"kind": "direct"})
@@ -538,12 +521,53 @@ class MappingService:
     # ── Internals ─────────────────────────────────────────────
 
     @staticmethod
+    def _check_no_many_to_many(db: Session, mapping_id: int,
+                               target: Dict[str, Any],
+                               sources: List[Dict[str, Any]]) -> None:
+        """Reject any edge whose source column is already mapped to a different
+        target column within the same draft (review §11.4 / FR3).
+
+        For each candidate source column, check whether it is already
+        mapped to a DIFFERENT target column within this mapping's draft.
+        Shared between add_edge and _add_edge_internal — the suggestion
+        path previously skipped this check on the false assumption that
+        "suggestion sources are unique to this target."
+        """
+        target_key = (target["table"], target["column"])
+        existing = (
+            db.query(FieldMapping)
+            .filter(FieldMapping.mapping_id == mapping_id,
+                    FieldMapping.version_id.is_(None))
+            .all()
+        )
+        for src in sources:
+            src_key = (src["table"], src["column"])
+            for e in existing:
+                e_target_key = (e.target_table, e.target_column)
+                for es in (e.sources or []):
+                    if (es.get("table"), es.get("column")) == src_key and e_target_key != target_key:
+                        raise HTTPException(
+                            status_code=409,
+                            detail=(
+                                f"source {src_key} already mapped to "
+                                f"{e_target_key}; many-to-many is not supported"
+                            ),
+                        )
+
+    @staticmethod
     def _add_edge_internal(db: Session, m: Mapping, *,
                            target: Dict[str, Any],
                            sources: List[Dict[str, Any]],
                            transformation: Dict[str, Any],
                            origin: str, actor: str) -> FieldMapping:
-        """Add an edge without the many-to-many guard (used by suggestion accept)."""
+        """Internal edge insert used by accept_suggestion. Applies the same
+        FR3 many-to-many guard as add_edge — review §11.4 closed the
+        prior bypass that let suggestion acceptance create N:M mappings."""
+        # Same FR3 guard as add_edge. The earlier implementation skipped
+        # this; restoring it ensures the suggestion path cannot create
+        # many-to-many mappings.
+        MappingService._check_no_many_to_many(db, m.id, target, sources)
+
         try:
             parse(transformation or {"kind": "direct"})
         except GrammarError as exc:
