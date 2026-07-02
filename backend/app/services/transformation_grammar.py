@@ -9,12 +9,35 @@ parameterized SQL fragment and appends any literal placeholders to the
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Dict, List, Tuple
 
 
 ALLOWED_KINDS: frozenset = frozenset({
     "direct", "cast", "concat", "substring", "coalesce",
     "upper", "lower", "trim", "default", "null_if", "lookup",
+})
+
+# Review §11.3: restrict identifiers and type names that flow into SQL.
+# Any field tagged "identifier" must match this regex; any field tagged
+# "sql_type" must be a member of SQL_TYPES below.
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+# SQL type names recognized by the validation service (mirrors the type
+# families in app/services/mapping_validation_service.py). Used by the
+# "sql_type" field-type tag for `cast.to` — keeps users from interpolating
+# arbitrary identifiers into a CAST(... AS <user-string>) fragment.
+SQL_TYPES: frozenset = frozenset({
+    # Text
+    "TEXT", "VARCHAR", "CHAR", "CLOB", "STRING",
+    # Integer
+    "INTEGER", "INT", "BIGINT", "SMALLINT", "TINYINT",
+    # Float
+    "FLOAT", "DOUBLE", "REAL", "DECIMAL", "NUMERIC",
+    # Date / time
+    "DATE", "TIMESTAMP", "DATETIME", "TIMESTAMPTZ",
+    # Boolean
+    "BOOLEAN", "BOOL",
 })
 
 
@@ -36,10 +59,17 @@ class GrammarError(ValueError):
 
 
 # Per-kind schema: field-name -> (type-tag, required)
-# Type tags: "str", "int", "bool", "any", "list_concat_parts".
+# Type tags:
+#   "str"              — any non-empty string (free text; NEVER interpolated into SQL)
+#   "int"              — integer
+#   "bool"             — boolean
+#   "any"              — pass-through (type-checked at use site if needed)
+#   "list_concat_parts"— structured concat-parts array
+#   "identifier"       — SQL identifier (review §11.3); must match _IDENT_RE
+#   "sql_type"         — SQL type name; must be in SQL_TYPES
 _KIND_SCHEMAS: Dict[str, Dict[str, Tuple[str, bool]]] = {
     "direct": {},
-    "cast": {"from": ("str", True), "to": ("str", True)},
+    "cast": {"from": ("str", True), "to": ("sql_type", True)},
     "concat": {"parts": ("list_concat_parts", True)},
     "substring": {"source_index": ("int", True), "start": ("int", True), "length": ("int", True)},
     "coalesce": {"fallback_kind": ("str", True), "fallback_value": ("any", True)},
@@ -48,8 +78,8 @@ _KIND_SCHEMAS: Dict[str, Dict[str, Tuple[str, bool]]] = {
     "trim": {},
     "default": {"value_kind": ("str", True), "value": ("any", True)},
     "null_if": {"equals": ("any", True)},
-    "lookup": {"table": ("str", True), "key_column": ("str", True),
-               "value_column": ("str", True), "default": ("any", False)},
+    "lookup": {"table": ("identifier", True), "key_column": ("identifier", True),
+               "value_column": ("identifier", True), "default": ("any", False)},
 }
 
 
@@ -92,6 +122,29 @@ def _check_field(value: Any, ftype: str, location: str) -> Any:
     if ftype == "bool":
         if not isinstance(value, bool):
             raise GrammarError(f"expected boolean at {location}", kind="bad_type", location=location)
+        return value
+    if ftype == "identifier":
+        # Review §11.3: reject anything that isn't a plain SQL identifier.
+        # This is the guard that prevents `table = "users; DROP TABLE x; --"`
+        # from being interpolated into compile_sql output.
+        if not isinstance(value, str) or not _IDENT_RE.fullmatch(value):
+            raise GrammarError(
+                f"expected a valid SQL identifier at {location} (got {value!r})",
+                kind="bad_type",
+                location=location,
+            )
+        return value
+    if ftype == "sql_type":
+        # `cast.to` must be a recognized SQL type name; arbitrary strings
+        # (e.g. "TEXT); DROP TABLE --") are rejected here rather than
+        # being passed to the SQL compiler.
+        if not isinstance(value, str) or value.upper() not in SQL_TYPES:
+            raise GrammarError(
+                f"expected a known SQL type at {location} (got {value!r}); "
+                f"allowed: {sorted(SQL_TYPES)}",
+                kind="bad_type",
+                location=location,
+            )
         return value
     if ftype == "any":
         return value

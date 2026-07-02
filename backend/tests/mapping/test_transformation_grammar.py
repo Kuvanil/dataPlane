@@ -154,3 +154,112 @@ def test_all_eleven_kinds_parse():
     for k in kinds:
         ast = parse(k)
         assert ast["kind"] == k["kind"]
+
+
+# ── SQL injection surface (review §11.3) ─────────────────────────────────
+# The grammar promises `docs/mapper-mapping-contract.md`: "No string
+# interpolation of user data into SQL." The compile_sql output for `cast`
+# and `lookup` embeds `payload["to"]` / `payload["table"]` / etc. into the
+# fragment. Every value that flows there must therefore be either a known
+# SQL type name (cast.to) or a valid SQL identifier (lookup.*).
+
+import pytest
+
+
+def test_cast_to_rejects_sql_injection():
+    with pytest.raises(GrammarError) as e:
+        parse({"kind": "cast", "from": "TEXT", "to": "TEXT); DROP TABLE users; --"})
+    assert e.value.kind == "bad_type"
+    assert e.value.location == "cast.to"
+
+
+def test_cast_to_rejects_dotted_identifier():
+    # Not a type name; would be "CAST(x AS users.id)" which is invalid SQL.
+    with pytest.raises(GrammarError):
+        parse({"kind": "cast", "from": "TEXT", "to": "users.id"})
+
+
+def test_cast_to_rejects_unknown_type():
+    # NUMERIC(10,2) and BYTEA are real Postgres types but not in the
+    # supported SQL_TYPES set; users must use one of the supported names.
+    with pytest.raises(GrammarError):
+        parse({"kind": "cast", "from": "TEXT", "to": "NUMERIC(10,2)"})
+    with pytest.raises(GrammarError):
+        parse({"kind": "cast", "from": "TEXT", "to": "BYTEA"})
+
+
+def test_cast_to_accepts_every_supported_sql_type():
+    from app.services.transformation_grammar import SQL_TYPES
+    for t in sorted(SQL_TYPES):
+        # Each must parse without raising.
+        ast = parse({"kind": "cast", "from": "TEXT", "to": t})
+        assert ast["payload"]["to"] == t
+
+
+def test_lookup_table_rejects_sql_injection():
+    with pytest.raises(GrammarError) as e:
+        parse({
+            "kind": "lookup", "table": "users; DELETE FROM users; --",
+            "key_column": "id", "value_column": "name",
+        })
+    assert e.value.kind == "bad_type"
+    assert e.value.location == "lookup.table"
+
+
+def test_lookup_key_column_rejects_injection():
+    with pytest.raises(GrammarError) as e:
+        parse({
+            "kind": "lookup", "table": "lu_country",
+            "key_column": "id'; DROP TABLE users; --", "value_column": "name",
+        })
+    assert e.value.location == "lookup.key_column"
+
+
+def test_lookup_value_column_rejects_injection():
+    with pytest.raises(GrammarError) as e:
+        parse({
+            "kind": "lookup", "table": "lu_country",
+            "key_column": "code", "value_column": "1 OR 1=1",
+        })
+    assert e.value.location == "lookup.value_column"
+
+
+def test_lookup_rejects_identifier_starting_with_digit():
+    with pytest.raises(GrammarError):
+        parse({
+            "kind": "lookup", "table": "lu_country",
+            "key_column": "123starts_with_digit", "value_column": "name",
+        })
+
+
+def test_lookup_rejects_identifier_with_spaces():
+    with pytest.raises(GrammarError):
+        parse({
+            "kind": "lookup", "table": "lu country",
+            "key_column": "code", "value_column": "name",
+        })
+
+
+def test_lookup_accepts_valid_identifiers():
+    # The full set of legal identifier characters: letters, digits (not
+    # first), underscore. Including underscores and mixed-case.
+    ast = parse({
+        "kind": "lookup",
+        "table": "lu_country_codes",
+        "key_column": "country_code_2",
+        "value_column": "Country_Name",
+    })
+    assert ast["payload"]["table"] == "lu_country_codes"
+    assert ast["payload"]["key_column"] == "country_code_2"
+    assert ast["payload"]["value_column"] == "Country_Name"
+
+
+def test_lookup_default_still_accepts_arbitrary_string():
+    # `default` is a literal value bound as a query parameter, NOT
+    # interpolated into the SQL fragment; it can be any string.
+    ast = parse({
+        "kind": "lookup", "table": "lu_country",
+        "key_column": "code", "value_column": "name",
+        "default": "anything goes here; even with spaces",
+    })
+    assert ast["payload"]["default"] == "anything goes here; even with spaces"
