@@ -126,11 +126,19 @@ class MappingValidationService:
                     break
                 # With cast: the incompatibility is resolved; treat as ok.
             elif _is_lossy(src_type, tgt_type):
-                if not has_cast:
-                    verdict = "blocking"
+                # Lossy conversions are a WARNING, not a blocking error
+                # (review §11.2 / FR7). Common safe operations like
+                # INTEGER→TEXT or FLOAT→INTEGER should be publishable with
+                # a visible warning, not silently blocked. Incompatible
+                # types above already block; null-safety below can escalate
+                # this to blocking if the target is NOT NULL and the source
+                # is nullable.
+                if not has_cast and verdict == "ok":
+                    verdict = "lossy_warning"
                     message = (
                         f"lossy: mapping {src_type} to {tgt_type} may lose "
-                        f"precision and no CAST transformation supplied"
+                        f"precision; add a CAST transformation to acknowledge, "
+                        f"or leave as a warning"
                     )
                 # With cast: the cast handles the lossy conversion; ok.
             elif _is_lossless_widening(src_type, tgt_type):
@@ -140,6 +148,9 @@ class MappingValidationService:
                 pass
 
         # Null-safety: target NOT NULL + nullable source without null-handling.
+        # This escalates a lossy_warning to blocking (because the nullable
+        # source would silently write a NULL into a NOT NULL column), but
+        # never downgrades a blocking verdict.
         if tgt_nullable is False or tgt_nullable == 0:
             for src in sources:
                 if src.get("nullable") and not _has_null_safety(transformation):
