@@ -8,7 +8,17 @@ celery_app = Celery(
     "dataplane",
     broker=settings.CELERY_BROKER_URL,
     backend=settings.CELERY_RESULT_BACKEND,
-    include=["app.tasks.ai_tasks"],
+    # include lists every module that defines @celery_app.task. Both must be
+    # registered or the worker silently drops incoming tasks ("Received
+    # unregistered task of name ..."). Schema Mapper requires BOTH:
+    # - app.tasks.ai_tasks: schema drift + NL2SQL helpers
+    # - app.workers.mapping_tasks: the AI suggestion task (added after the
+    #   §11.1 review caught the original omission that made "Get AI
+    #   Suggestions" a silent no-op in production).
+    include=[
+        "app.tasks.ai_tasks",
+        "app.workers.mapping_tasks",
+    ],
 )
 
 celery_app.conf.update(

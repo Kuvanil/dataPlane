@@ -16,6 +16,10 @@ from app.models.mapping import (
 from app.services.audit_helper import record_audit
 from app.services.mapping_validation_service import MappingValidationService
 from app.services.transformation_grammar import GrammarError, parse
+# Importing the task object directly (instead of send_task by string name)
+# means a future rename or typo fails at import time, not silently at runtime
+# (review §11.1).
+from app.workers.mapping_tasks import suggest_mappings_task
 
 logger = logging.getLogger(__name__)
 
@@ -271,10 +275,7 @@ class MappingService:
                             actor: str) -> str:
         m = MappingService.get_mapping(db, mapping_id)
         _assert_draft(m)
-        task = celery_app.send_task(
-            "app.workers.mapping_tasks.suggest_mappings_task",
-            kwargs={"mapping_id": mapping_id},
-        )
+        task = suggest_mappings_task.delay(mapping_id=mapping_id)
         record_audit(
             db, "mapping_suggestions_requested", actor=actor,
             connection_id=m.source_id,
