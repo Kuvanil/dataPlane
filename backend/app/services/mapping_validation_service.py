@@ -17,9 +17,46 @@ _DATE_FAMILY = {"DATE"}
 _TS_FAMILY = {"TIMESTAMP", "DATETIME", "TIMESTAMPTZ"}
 _BOOL_FAMILY = {"BOOLEAN", "BOOL"}
 
+# Review §11.10: plain family matching (above) treats every int-family pair
+# and every float-family pair as equally safe, so a narrowing conversion
+# within a family -- e.g. BIGINT -> SMALLINT, DOUBLE -> REAL -- was silently
+# passing as "ok" even though the target can't hold every value the source
+# can. These ranks let _is_lossy() detect "narrower than" within a family;
+# same-or-widening pairs (e.g. SMALLINT -> BIGINT) are unaffected and still
+# fall through to the existing same-family "ok" path.
+_INT_RANK = {"TINYINT": 1, "SMALLINT": 2, "INTEGER": 3, "INT": 3, "BIGINT": 4}
+_FLOAT_RANK = {"REAL": 1, "FLOAT": 2, "DOUBLE": 3, "DECIMAL": 3, "NUMERIC": 3}
+
 
 def _normalize(t: Any) -> str:
     return (str(t or "")).strip().upper().split("(")[0]
+
+
+def _is_narrowing_int(src: Any, tgt: Any) -> bool:
+    """True when src is a wider integer type than tgt (review §11.10).
+
+    Widening (e.g. INTEGER -> BIGINT) returns False; equal returns False.
+    """
+    s_n, t_n = _normalize(src), _normalize(tgt)
+    s_r = _INT_RANK.get(s_n)
+    t_r = _INT_RANK.get(t_n)
+    if s_r is None or t_r is None:
+        return False
+    return s_r > t_r
+
+
+def _is_narrowing_float(src: Any, tgt: Any) -> bool:
+    """True when src is a wider float type than tgt (review §11.10).
+
+    REAL < FLOAT < DOUBLE / DECIMAL / NUMERIC. Narrowing (DOUBLE -> REAL)
+    is lossy; widening (REAL -> DOUBLE) returns False.
+    """
+    s_n, t_n = _normalize(src), _normalize(tgt)
+    s_r = _FLOAT_RANK.get(s_n)
+    t_r = _FLOAT_RANK.get(t_n)
+    if s_r is None or t_r is None:
+        return False
+    return s_r > t_r
 
 
 def _family(t: Any) -> str:
@@ -86,6 +123,21 @@ def _is_lossy(src: Any, tgt: Any) -> bool:
         return True
     if s == "int" and t == "float":
         return True
+    # Within-family narrowing (review §11.10). Same-or-widening pairs
+    # (e.g. INTEGER -> BIGINT) stay "ok" via _is_lossless_widening;
+    # narrowing pairs (BIGINT -> SMALLINT, DOUBLE -> REAL) are lossy
+    # because the destination cannot represent every value of the source.
+    if s == "int" and t == "int" and _is_narrowing_int(src, tgt):
+        return True
+    if s == "float" and t == "float" and _is_narrowing_float(src, tgt):
+        return True
+    # Narrowing within the same family -- not visible to the family-only
+    # checks above, since both sides collapse to "int" / "float".
+    s_n, t_n = _normalize(src), _normalize(tgt)
+    if s_n in _INT_RANK and t_n in _INT_RANK and _INT_RANK[s_n] > _INT_RANK[t_n]:
+        return True
+    if s_n in _FLOAT_RANK and t_n in _FLOAT_RANK and _FLOAT_RANK[s_n] > _FLOAT_RANK[t_n]:
+        return True
     return False
 
 
@@ -144,7 +196,10 @@ class MappingValidationService:
             elif _is_lossless_widening(src_type, tgt_type):
                 pass
             else:
-                # Same family narrow case — treated as ok.
+                # Same family, same-or-widening rank (e.g. SMALLINT ->
+                # BIGINT, REAL -> DOUBLE) -- narrowing within a family is
+                # caught by _is_lossy above, so anything reaching here is
+                # genuinely safe.
                 pass
 
         # Null-safety: target NOT NULL + nullable source without null-handling.
