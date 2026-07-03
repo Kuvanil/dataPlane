@@ -230,6 +230,79 @@ def test_publish_creates_immutable_version(db, admin, seeded_connections, monkey
     assert audit.payload["version_number"] == 1
 
 
+def test_publish_race_condition_returns_409(db, admin, seeded_connections, monkeypatch):
+    """CONTRADICTIONS.md C5: two concurrent publishes racing on version_number
+    must surface as a clean 409, not an unhandled IntegrityError/500.
+
+    Simulated by inserting a competing mapping_versions row (version_number=1
+    for this mapping) directly on the session's underlying connection -- Core
+    execute(), not the ORM -- right as this session's own flush() runs. That
+    reproduces exactly the collision two concurrent publish() calls would hit
+    on the DB's UniqueConstraint(mapping_id, version_number), without needing
+    a second real connection/thread.
+    """
+    from sqlalchemy import text
+
+    from app.models.mapping import MappingVersion as _MappingVersion
+
+    monkeypatch.setattr(
+        schema_service.SchemaService, "get_full_schema",
+        staticmethod(_fake_schema),
+    )
+    src, tgt = seeded_connections
+    m = MappingService.create_mapping(
+        db, source_id=src.id, target_id=tgt.id,
+        name="Race", actor=admin.email,
+    )
+    MappingService.add_edge(
+        db, m.id,
+        target={"table": "t1", "column": "c1", "type": "TEXT", "nullable": False},
+        sources=[{"table": "s1", "column": "c1", "type": "TEXT", "nullable": False}],
+        transformation={"kind": "direct"},
+        actor=admin.email,
+    )
+
+    real_flush = db.flush
+    state = {"done": False}
+
+    def _flush_with_concurrent_interloper(*args, **kwargs):
+        # SQLAlchemy autoflushes on every query, including publish()'s own
+        # "last version" lookup -- that fires this wrapper too, before
+        # next_n has even been decided. Only inject the interloper once the
+        # ORM actually has a pending MappingVersion to insert (i.e. we're at
+        # publish()'s own `db.add(version); db.flush()`), so next_n=1 has
+        # already been locked in and the collision is genuine.
+        pending_version = any(isinstance(o, _MappingVersion) for o in db.new)
+        if not state["done"] and pending_version:
+            state["done"] = True
+            # Raw Core execute on the session's own connection -- bypasses
+            # the ORM identity map/autoflush so it doesn't recurse back into
+            # this patched flush(), while still landing in the same
+            # transaction the way a concurrent request's own commit would
+            # have landed in the DB before this one gets there.
+            db.connection().execute(
+                text(
+                    "INSERT INTO mapping_versions "
+                    "(mapping_id, version_number, status, published_by) "
+                    "VALUES (:mid, 1, 'published', 'other-admin@test.local')"
+                ),
+                {"mid": m.id},
+            )
+        return real_flush(*args, **kwargs)
+
+    monkeypatch.setattr(db, "flush", _flush_with_concurrent_interloper)
+
+    with pytest.raises(HTTPException) as e:
+        MappingService.publish(db, m.id, actor=admin.email)
+    assert e.value.status_code == 409
+
+    # The mapping must remain a publishable draft -- the failed attempt must
+    # not have left it half-published.
+    db.rollback()
+    db.refresh(m)
+    assert m.status == "draft"
+
+
 def test_publish_second_version_increments(db, admin, seeded_connections, monkeypatch):
     monkeypatch.setattr(
         schema_service.SchemaService, "get_full_schema",

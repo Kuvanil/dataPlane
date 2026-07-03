@@ -2,7 +2,9 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import { classNames, formatRelativeTime } from "../lib/format";
-import type { ConnectorRef, Mapping, Role } from "../lib/types";
+import type { ConnectorRef, Mapping, Paginated, Role } from "../lib/types";
+
+const PAGE_SIZE = 50;
 
 interface MappingListProps {
   selectedId: number | null;
@@ -18,16 +20,26 @@ export default function MappingList({
   role,
 }: MappingListProps) {
   const [mappings, setMappings] = useState<Mapping[]>([]);
+  const [total, setTotal] = useState(0);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showCreate, setShowCreate] = useState(false);
 
+  // Review §11.8: the backend paginates (NFR: ≥10,000 mappings/tenant), so
+  // the sidebar fetches PAGE_SIZE at a time and exposes a "Load more"
+  // affordance instead of requesting everything at once.
   const fetchMappings = async () => {
     setLoading(true);
     setError(null);
     try {
-      const data = await api.get<Mapping[]>("/api/v1/mappings/");
-      setMappings(data);
+      const data = await api.get<Paginated<Mapping>>(
+        `/api/v1/mappings/?limit=${PAGE_SIZE}&offset=0`,
+      );
+      setMappings(data.items);
+      setTotal(data.total);
+      setHasMore(data.has_more);
     } catch (err) {
       // Fallback to empty list on auth/connection error.
       if (err instanceof ApiError && err.status === 401) {
@@ -36,8 +48,29 @@ export default function MappingList({
         setError("Backend unreachable.");
       }
       setMappings([]);
+      setTotal(0);
+      setHasMore(false);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadMore = async () => {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    try {
+      const data = await api.get<Paginated<Mapping>>(
+        `/api/v1/mappings/?limit=${PAGE_SIZE}&offset=${mappings.length}`,
+      );
+      setMappings((prev) => [...prev, ...data.items]);
+      setTotal(data.total);
+      setHasMore(data.has_more);
+    } catch (err) {
+      const message =
+        err instanceof ApiError ? err.message : "Failed to load more mappings.";
+      setError(message);
+    } finally {
+      setLoadingMore(false);
     }
   };
 
@@ -52,7 +85,9 @@ export default function MappingList({
     >
       <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-zinc-200">Mappings</h3>
+          <h3 className="text-sm font-semibold text-zinc-200">
+            Mappings{total > 0 ? ` · ${total}` : ""}
+          </h3>
           <p className="text-[10px] text-zinc-500 uppercase tracking-wider">
             Drafts & published
           </p>
@@ -79,44 +114,58 @@ export default function MappingList({
             No mappings yet. Click <span className="text-zinc-300">+ New</span> to create one.
           </div>
         ) : (
-          <ul className="p-2 flex flex-col gap-1">
-            {mappings.map((m) => (
-              <li key={m.id}>
+          <>
+            <ul className="p-2 flex flex-col gap-1">
+              {mappings.map((m) => (
+                <li key={m.id}>
+                  <button
+                    type="button"
+                    onClick={() => onSelect(m.id)}
+                    aria-current={selectedId === m.id ? "true" : undefined}
+                    className={classNames(
+                      "w-full text-left px-3 py-2 rounded-lg text-xs transition-all border",
+                      selectedId === m.id
+                        ? "bg-blue-600/10 border-blue-500/30 text-blue-300"
+                        : "border-transparent hover:bg-zinc-800/40 text-zinc-300",
+                    )}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-medium truncate">{m.name}</span>
+                      <span
+                        className={classNames(
+                          "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase",
+                          m.status === "published"
+                            ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+                            : "bg-zinc-800 text-zinc-400",
+                        )}
+                      >
+                        {m.status}
+                      </span>
+                    </div>
+                    <div className="mt-1 text-[10px] text-zinc-500 flex items-center gap-2">
+                      <span>#{m.id}</span>
+                      <span>·</span>
+                      <span>{m.edges.length} edges</span>
+                      <span>·</span>
+                      <span>{formatRelativeTime(m.updated_at)}</span>
+                    </div>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            {hasMore && (
+              <div className="px-4 pb-3">
                 <button
                   type="button"
-                  onClick={() => onSelect(m.id)}
-                  aria-current={selectedId === m.id ? "true" : undefined}
-                  className={classNames(
-                    "w-full text-left px-3 py-2 rounded-lg text-xs transition-all border",
-                    selectedId === m.id
-                      ? "bg-blue-600/10 border-blue-500/30 text-blue-300"
-                      : "border-transparent hover:bg-zinc-800/40 text-zinc-300",
-                  )}
+                  onClick={() => void loadMore()}
+                  disabled={loadingMore}
+                  className="w-full py-1.5 text-[11px] font-medium text-zinc-400 hover:text-zinc-200 border border-zinc-800 rounded-lg hover:bg-zinc-800/40 disabled:opacity-50"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium truncate">{m.name}</span>
-                    <span
-                      className={classNames(
-                        "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase",
-                        m.status === "published"
-                          ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                          : "bg-zinc-800 text-zinc-400",
-                      )}
-                    >
-                      {m.status}
-                    </span>
-                  </div>
-                  <div className="mt-1 text-[10px] text-zinc-500 flex items-center gap-2">
-                    <span>#{m.id}</span>
-                    <span>·</span>
-                    <span>{m.edges.length} edges</span>
-                    <span>·</span>
-                    <span>{formatRelativeTime(m.updated_at)}</span>
-                  </div>
+                  {loadingMore ? "Loading…" : `Load more (${mappings.length} of ${total})`}
                 </button>
-              </li>
-            ))}
-          </ul>
+              </div>
+            )}
+          </>
         )}
       </div>
 

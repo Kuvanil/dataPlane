@@ -14,8 +14,9 @@ from app.models.mapping import AISuggestion, FieldMapping, Mapping
 from app.models.user import User
 from app.schemas.mapping import (
     EdgeCreate, EdgeResponse, EdgeTransformationUpdate, MappingCreate,
-    MappingResponse, MappingUpdate, PublishResponse, SourceRef, SuggestionAcceptRequest,
-    SuggestionResponse, TargetRef, ValidationIssue, ValidationResponse,
+    MappingListResponse, MappingResponse, MappingUpdate, PublishResponse, SourceRef,
+    SuggestionAcceptRequest, SuggestionListResponse, SuggestionResponse, TargetRef,
+    ValidationIssue, ValidationResponse,
 )
 from app.services.mapping_service import MappingService
 
@@ -75,18 +76,26 @@ def create_mapping(
     return _mapping_response(m)
 
 
-@router.get("/", response_model=List[MappingResponse])
+@router.get("/", response_model=MappingListResponse)
 def list_mappings(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
-    rows = (
-        db.query(Mapping)
-        .filter(Mapping.deleted_at.is_(None))
-        .order_by(Mapping.created_at.desc())
-        .all()
+    # Review §11.8: paginate to support the NFR of ≥10,000 mappings per
+    # tenant. Returns {items, total, limit, offset, has_more} instead of a
+    # bare list so the frontend can render "Load more" / page indicators.
+    items, total = MappingService.list_mappings(
+        db, limit=limit, offset=offset,
     )
-    return [_mapping_response(m) for m in rows]
+    return {
+        "items": [_mapping_response(m) for m in items],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": (offset + len(items)) < total,
+    }
 
 
 @router.get("/{mapping_id}", response_model=MappingResponse)
@@ -169,21 +178,32 @@ def request_suggestions(
     return {"task_id": task_id, "status": "PENDING", "mapping_id": mapping_id}
 
 
-@router.get(
-    "/{mapping_id}/suggestions",
-    response_model=List[SuggestionResponse],
-)
+@router.get("/{mapping_id}/suggestions", response_model=SuggestionListResponse)
 def list_suggestions(
-    mapping_id: int, db: Session = Depends(get_db),
+    mapping_id: int,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    db: Session = Depends(get_db),
     _user: User = Depends(get_current_user),
 ):
+    # Review §11.8: paginate. Verify the mapping exists (so 404 fires
+    # cleanly when the id is wrong instead of returning an empty list).
+    MappingService.get_mapping(db, mapping_id)
+    base = db.query(AISuggestion).filter(AISuggestion.mapping_id == mapping_id)
+    total = base.count()
     rows = (
-        db.query(AISuggestion)
-        .filter(AISuggestion.mapping_id == mapping_id)
-        .order_by(AISuggestion.confidence.desc())
+        base.order_by(AISuggestion.confidence.desc())
+        .offset(offset)
+        .limit(limit)
         .all()
     )
-    return rows
+    return {
+        "items": rows,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "has_more": (offset + len(rows)) < total,
+    }
 
 
 @router.post(

@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from fastapi import HTTPException
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.celery_app import celery_app
@@ -68,6 +69,26 @@ class MappingService:
         if not m:
             raise HTTPException(status_code=404, detail="mapping not found")
         return m
+
+    @staticmethod
+    def list_mappings(
+        db: Session, *, limit: int = 50, offset: int = 0,
+    ) -> tuple:
+        """Return (items, total) for paginated list.
+
+        Soft-deleted mappings are excluded. Order: most recent first.
+        Cheap on Postgres/SQLite with an indexed created_at; a separate
+        COUNT(*) per request is sub-millisecond at the NFR scale.
+        """
+        base = db.query(Mapping).filter(Mapping.deleted_at.is_(None))
+        total = base.count()
+        items = (
+            base.order_by(Mapping.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
+        return items, total
 
     @staticmethod
     def update_mapping_meta(db: Session, mapping_id: int, *,
@@ -427,26 +448,45 @@ class MappingService:
             schema_snapshot={"source": source_schema, "target": target_schema},
             edges_snapshot=edges_snapshot,
         )
-        db.add(version)
-        db.flush()
+        # Review §8 / CONTRADICTIONS.md C5: two concurrent publishes on the
+        # same draft can both pass the _assert_draft check and race on
+        # version_number, which is only guarded by the DB's UniqueConstraint
+        # (mapping_id, version_number). Catch that race here and translate it
+        # into a clean 409 instead of letting IntegrityError surface as a 500.
+        try:
+            db.add(version)
+            db.flush()
 
-        # Pin all current draft edges to this version.
-        for e in (m.edges or []):
-            e.version_id = version.id
-        m.status = "published"
-        m.current_version_id = version.id
-        db.flush()
-        record_audit(
-            db, "mapping_published", actor=actor,
-            connection_id=m.source_id,
-            payload={
-                "mapping_id": m.id,
-                "version_number": next_n,
-                "version_id": version.id,
-                "edges_count": len(edges_snapshot),
-            },
-        )
-        db.commit()
+            # Pin all current draft edges to this version.
+            for e in (m.edges or []):
+                e.version_id = version.id
+            m.status = "published"
+            m.current_version_id = version.id
+            db.flush()
+            record_audit(
+                db, "mapping_published", actor=actor,
+                connection_id=m.source_id,
+                payload={
+                    "mapping_id": m.id,
+                    "version_number": next_n,
+                    "version_id": version.id,
+                    "edges_count": len(edges_snapshot),
+                },
+            )
+            db.commit()
+        except IntegrityError as exc:
+            db.rollback()
+            logger.warning(
+                "publish: version_number race for mapping %s (attempted %s): %s",
+                m.id, next_n, exc,
+            )
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "mapping was published concurrently by another request; "
+                    "reload and try again"
+                ),
+            ) from exc
         db.refresh(version)
         return version
 

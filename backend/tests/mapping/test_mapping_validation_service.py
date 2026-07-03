@@ -33,6 +33,84 @@ def test_int_to_bigint_is_ok():
     assert r["verdict"] == "ok"
 
 
+def test_smallint_to_bigint_widening_is_ok():
+    # Widening within the int family (narrower source, wider target) must
+    # stay ok -- only the opposite direction (narrowing) is lossy.
+    e = _edge(
+        {"type": "BIGINT", "nullable": False},
+        [{"type": "SMALLINT", "nullable": False}],
+    )
+    r = MappingValidationService.validate_edge(e)
+    assert r["verdict"] == "ok"
+
+
+def test_decimal_to_numeric_same_rank_is_ok():
+    # DECIMAL and NUMERIC share a float-family rank -- same-rank, not
+    # narrowing, must stay ok.
+    e = _edge(
+        {"type": "NUMERIC", "nullable": False},
+        [{"type": "DECIMAL", "nullable": False}],
+    )
+    r = MappingValidationService.validate_edge(e)
+    assert r["verdict"] == "ok"
+
+
+def test_bigint_to_smallint_is_lossy_warning_without_cast():
+    # Review §11.10: narrowing WITHIN the int family (BIGINT can hold values
+    # SMALLINT can't, e.g. 95000) was invisible to the old family-only
+    # check, which treated all int-family pairs as equally safe. Must now
+    # warn, exactly like the cross-family lossy cases (e.g. INT -> TEXT).
+    e = _edge(
+        {"type": "SMALLINT", "nullable": False},
+        [{"type": "BIGINT", "nullable": False}],
+    )
+    r = MappingValidationService.validate_edge(e)
+    assert r["verdict"] == "lossy_warning"
+
+
+def test_bigint_to_smallint_with_cast_is_ok():
+    e = _edge(
+        {"type": "SMALLINT", "nullable": False},
+        [{"type": "BIGINT", "nullable": False}],
+        {"kind": "cast", "from": "BIGINT", "to": "SMALLINT"},
+    )
+    r = MappingValidationService.validate_edge(e)
+    assert r["verdict"] == "ok"
+
+
+def test_double_to_real_is_lossy_warning_without_cast():
+    # Same narrowing gap in the float family: DOUBLE has more precision
+    # than single-precision REAL.
+    e = _edge(
+        {"type": "REAL", "nullable": False},
+        [{"type": "DOUBLE", "nullable": False}],
+    )
+    r = MappingValidationService.validate_edge(e)
+    assert r["verdict"] == "lossy_warning"
+
+
+def test_double_to_real_with_cast_is_ok():
+    e = _edge(
+        {"type": "REAL", "nullable": False},
+        [{"type": "DOUBLE", "nullable": False}],
+        {"kind": "cast", "from": "DOUBLE", "to": "REAL"},
+    )
+    r = MappingValidationService.validate_edge(e)
+    assert r["verdict"] == "ok"
+
+
+def test_bigint_to_smallint_with_nullable_source_escalates_to_blocking():
+    # Same escalation rule as the cross-family lossy case: a narrowing
+    # conversion that ALSO has a null-safety issue is genuinely blocking,
+    # not just a warning.
+    e = _edge(
+        {"type": "SMALLINT", "nullable": False},
+        [{"type": "BIGINT", "nullable": True}],
+    )
+    r = MappingValidationService.validate_edge(e)
+    assert r["verdict"] == "blocking"
+
+
 def test_text_to_int_without_cast_is_blocking():
     e = _edge(
         {"type": "INTEGER", "nullable": False},

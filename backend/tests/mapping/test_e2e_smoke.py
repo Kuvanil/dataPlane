@@ -120,9 +120,10 @@ def test_full_ui_smoke_flow(client, seeded_connections):
     _t.sleep(1.0)
 
     # 6. List suggestions — UI populates the SuggestionPanel.
+    # Paginated shape (review §11.8): {items, total, limit, offset, has_more}.
     res = client.get(f"/api/v1/mappings/{mid}/suggestions")
     assert res.status_code == 200, res.text
-    suggestions = res.json()
+    suggestions = res.json()["items"]
     # We don't assert count > 0 because in this sandbox the AI fallback
     # may produce zero suggestions; the flow still must not error.
 
@@ -173,9 +174,11 @@ def test_full_ui_smoke_flow(client, seeded_connections):
     assert len(artifact["field_mappings"]) >= 1
 
     # 12. List mappings and confirm the published status pill.
+    # Paginated shape (review §11.8): {items, total, limit, offset, has_more}.
     res = client.get("/api/v1/mappings/")
     assert res.status_code == 200, res.text
-    listed = next(m for m in res.json() if m["id"] == mid)
+    body = res.json()
+    listed = next(m for m in body["items"] if m["id"] == mid)
     assert listed["status"] == "published"
     assert listed["current_version_id"] == publish["version_id"]
 

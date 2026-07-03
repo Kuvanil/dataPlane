@@ -17,6 +17,7 @@ import type {
   ExportArtifact,
   FieldMapping,
   Mapping,
+  Paginated,
   PublishResponse,
   Role,
   SourceRef,
@@ -27,6 +28,21 @@ import type {
 } from "../lib/types";
 
 const AUTOSAVE_INTERVAL_MS = 30_000;
+
+// The suggestion panel wants "every pending suggestion for this mapping" in
+// one shot, not a browsable page -- so it requests the server's max page
+// size (see le=200 on GET /mappings/{id}/suggestions) rather than paging.
+// A mapping with more than 200 unmapped target columns at once (20% of the
+// TRD's 1,000-column ceiling) would need real pagination here too; tracked
+// as a known limit rather than built out speculatively.
+const SUGGESTIONS_PAGE_LIMIT = 200;
+
+async function fetchAllSuggestions(mappingId: number): Promise<AISuggestion[]> {
+  const page = await api.get<Paginated<AISuggestion>>(
+    `/api/v1/mappings/${mappingId}/suggestions?limit=${SUGGESTIONS_PAGE_LIMIT}`,
+  );
+  return page.items;
+}
 
 export interface UseMappingResult {
   mapping: Mapping | null;
@@ -165,9 +181,7 @@ export function useMapping(): UseMappingResult {
       try {
         const [m, s] = await Promise.all([
           api.get<Mapping>(`/api/v1/mappings/${mappingId}`),
-          api
-            .get<AISuggestion[]>(`/api/v1/mappings/${mappingId}/suggestions`)
-            .catch(() => [] as AISuggestion[]),
+          fetchAllSuggestions(mappingId).catch(() => [] as AISuggestion[]),
         ]);
         setMapping(m);
         setSuggestions(s);
@@ -320,9 +334,7 @@ export function useMapping(): UseMappingResult {
             result?: { suggestions_created?: number } | null;
           }>(`/api/v1/tasks/${task_id}`);
           if (status.status === "SUCCESS") {
-            const fresh = await api.get<AISuggestion[]>(
-              `/api/v1/mappings/${mapping.id}/suggestions`,
-            );
+            const fresh = await fetchAllSuggestions(mapping.id);
             setSuggestions(fresh);
             showToast(
               "success",
@@ -361,7 +373,7 @@ export function useMapping(): UseMappingResult {
         // Refresh both edges and suggestions.
         const [m, s] = await Promise.all([
           api.get<Mapping>(`/api/v1/mappings/${mapping.id}`),
-          api.get<AISuggestion[]>(`/api/v1/mappings/${mapping.id}/suggestions`),
+          fetchAllSuggestions(mapping.id),
         ]);
         setMapping(m);
         setSuggestions(s);
@@ -383,9 +395,7 @@ export function useMapping(): UseMappingResult {
           `/api/v1/mappings/${mapping.id}/suggestions/${suggestionId}/reject`,
           {},
         );
-        const s = await api.get<AISuggestion[]>(
-          `/api/v1/mappings/${mapping.id}/suggestions`,
-        );
+        const s = await fetchAllSuggestions(mapping.id);
         setSuggestions(s);
         showToast("info", "Suggestion rejected.");
       } catch (err) {

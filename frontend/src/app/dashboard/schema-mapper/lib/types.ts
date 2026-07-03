@@ -157,6 +157,18 @@ export interface SuggestionAcceptRequest {
   transformation?: TransformationPayload;
 }
 
+/**
+ * Paginated list envelope matching the backend's MappingListResponse /
+ * SuggestionListResponse shape (backend/app/schemas/mapping.py).
+ */
+export interface Paginated<T> {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+  has_more: boolean;
+}
+
 export interface ExportArtifact {
   mapping_id: number;
   name: string;

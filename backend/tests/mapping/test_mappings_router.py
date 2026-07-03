@@ -109,9 +109,41 @@ def test_create_mapping_201(client_admin, seeded_connections):
 
 
 def test_list_mappings_returns_list(client_admin):
+    # Review §11.8: paginated shape -- {items, total, limit, offset, has_more}
+    # instead of a bare array, so the sidebar can page through large tenants.
     res = client_admin.get("/api/v1/mappings/")
     assert res.status_code == 200
-    assert isinstance(res.json(), list)
+    body = res.json()
+    assert isinstance(body["items"], list)
+    for key in ("total", "limit", "offset", "has_more"):
+        assert key in body
+
+
+def test_list_mappings_pagination_params(client_admin, seeded_connections):
+    src, tgt = seeded_connections
+    for i in range(3):
+        res = client_admin.post("/api/v1/mappings/", json={
+            "name": f"Page mapping {i}", "source_id": src.id, "target_id": tgt.id,
+        })
+        assert res.status_code == 201
+
+    res = client_admin.get("/api/v1/mappings/", params={"limit": 2, "offset": 0})
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["items"]) == 2
+    assert body["limit"] == 2
+    assert body["offset"] == 0
+    assert body["total"] >= 3
+    assert body["has_more"] is True
+
+    res = client_admin.get("/api/v1/mappings/", params={"limit": 2, "offset": 2})
+    assert res.status_code == 200
+    body2 = res.json()
+    assert len(body2["items"]) >= 1
+    # No overlap between the two pages.
+    ids_page1 = {m["id"] for m in body["items"]}
+    ids_page2 = {m["id"] for m in body2["items"]}
+    assert ids_page1.isdisjoint(ids_page2)
 
 
 def test_viewer_can_list_but_not_create(client_viewer, seeded_connections):
