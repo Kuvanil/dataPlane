@@ -131,3 +131,24 @@ class PublishResponse(BaseModel):
     status: str
     published_at: datetime
     published_by: str
+
+
+class MappingListResponse(BaseModel):
+    """Review §11.8: paginated list shape so callers can page through
+    ≥10,000 mappings per tenant instead of receiving an unbounded array."""
+
+    items: List[MappingResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
+
+
+class SuggestionListResponse(BaseModel):
+    """Paginated shape for GET /mappings/{id}/suggestions (review §11.8)."""
+
+    items: List[SuggestionResponse]
+    total: int
+    limit: int
+    offset: int
+    has_more: bool
