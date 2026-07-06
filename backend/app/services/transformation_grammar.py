@@ -18,6 +18,15 @@ ALLOWED_KINDS: frozenset = frozenset({
     "upper", "lower", "trim", "default", "null_if", "lookup",
 })
 
+# Transformation kinds that accept >1 source column. All others emit a
+# single positional placeholder (`%s` for the source value), so attaching
+# 2+ sources to a non-MULTI_SOURCE_KIND edge would produce a parameter-
+# count mismatch at execution time. The service layer enforces this
+# invariant at add_edge / update_edge_transformation time
+# (mapper_tasks #1). `concat` is the only kind whose _sql_concat()
+# iterates sources explicitly.
+MULTI_SOURCE_KINDS: frozenset = frozenset({"concat"})
+
 # Review §11.3: restrict identifiers and type names that flow into SQL.
 # Any field tagged "identifier" must match this regex; any field tagged
 # "sql_type" must be a member of SQL_TYPES below.

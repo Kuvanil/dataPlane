@@ -162,11 +162,15 @@ export default function SchemaMapperPage() {
                   canEdit={canEdit}
                   role={m.role}
                   onSelectEdge={(id) => m.selectEdge(id)}
-                  onCreateEdge={async (target, sources) => {
+                  onCreateEdge={async (target, sources, transformation) => {
                     await m.addEdge({
                       target,
                       sources,
-                      transformation: { kind: "direct" },
+                      // mapper_tasks #1: Canvas now computes the right
+                      // transformation (direct for 1 source, concat for
+                      // 2+). This page no longer hardcodes `direct` since
+                      // the backend guard rejects multi-source + non-concat.
+                      transformation,
                     });
                   }}
                 />

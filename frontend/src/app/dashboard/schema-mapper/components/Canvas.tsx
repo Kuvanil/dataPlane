@@ -6,6 +6,7 @@ import type {
   Role,
   SourceRef,
   TargetRef,
+  TransformationPayload,
 } from "../lib/types";
 
 interface CanvasProps {
@@ -15,7 +16,11 @@ interface CanvasProps {
   canEdit: boolean;
   role: Role | null;
   onSelectEdge: (id: number | null) => void;
-  onCreateEdge: (target: TargetRef, sources: SourceRef[]) => Promise<void>;
+  onCreateEdge: (
+    target: TargetRef,
+    sources: SourceRef[],
+    transformation: TransformationPayload,
+  ) => Promise<void>;
 }
 
 interface ColumnNode {
@@ -67,6 +72,13 @@ export default function Canvas({
   const [draggingSourceId, setDraggingSourceId] = useState<string | null>(null);
   const [hoverTargetId, setHoverTargetId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  // mapper_tasks #1: multi-source staging. Click a source column to add it to
+  // the staging set; click again to remove. The "Connect N → target" pill
+  // appears once >=1 source is staged; clicking a target with staged sources
+  // calls onCreateEdge with all of them. For >=2 sources the transformation
+  // defaults to `concat` (the only MULTI_SOURCE_KIND); the backend guard
+  // (mapping_service.add_edge) rejects any other kind.
+  const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   // Load mapping → resolve source/target connection ids, then schemas.
@@ -169,10 +181,59 @@ export default function Canvas({
           primary_key: target.primary_key,
         },
         [{ table: source.table, column: source.column, type: source.type }],
+        { kind: "direct" },
       );
     } finally {
       setCreating(false);
     }
+  };
+
+  // mapper_tasks #1: connect N staged sources to a clicked target column.
+  // Used by the "Connect N → target" affordance and by clicking a target
+  // while sources are staged. Computes a sane default transformation:
+  // 1 source → direct, 2+ sources → concat.
+  const connectStagedSources = async (target: ColumnNode) => {
+    if (!canEdit || creating) return;
+    if (selectedSourceIds.length === 0) return;
+    const sources = selectedSourceIds
+      .map((id) => sourceColumns.find((c) => c.id === id))
+      .filter((c): c is ColumnNode => Boolean(c));
+    if (sources.length === 0) return;
+    setCreating(true);
+    setHoverTargetId(null);
+    try {
+      const transformation: TransformationPayload =
+        sources.length === 1
+          ? { kind: "direct" }
+          : {
+              kind: "concat",
+              parts: sources.map(() => ({ kind: "source" })),
+            };
+      await onCreateEdge(
+        {
+          table: target.table,
+          column: target.column,
+          type: target.type,
+          primary_key: target.primary_key,
+        },
+        sources.map((s) => ({
+          table: s.table,
+          column: s.column,
+          type: s.type,
+        })),
+        transformation,
+      );
+      setSelectedSourceIds([]);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const toggleSourceSelection = (id: string) => {
+    if (!canEdit) return;
+    setSelectedSourceIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
+    );
   };
 
   return (
@@ -198,8 +259,10 @@ export default function Canvas({
             side="source"
             mappedKeys={sourceMappedKeys}
             draggingId={draggingSourceId}
+            selectedIds={selectedSourceIds}
             onDragStart={canEdit ? setDraggingSourceId : undefined}
             onDragEnd={() => setDraggingSourceId(null)}
+            onToggleSelect={canEdit ? toggleSourceSelection : undefined}
           />
           <ConnectorOverlay
             height={svgHeight}
@@ -227,6 +290,8 @@ export default function Canvas({
             hoverId={hoverTargetId}
             onDropHover={(id) => setHoverTargetId(id)}
             onDrop={onDrop}
+            onTargetClick={canEdit ? connectStagedSources : undefined}
+            stagedCount={selectedSourceIds.length}
           />
         </div>
       )}
@@ -270,10 +335,14 @@ function SchemaPanel({
   mappedKeys,
   draggingId,
   hoverId,
+  selectedIds,
   onDragStart,
   onDragEnd,
   onDropHover,
   onDrop,
+  onToggleSelect,
+  onTargetClick,
+  stagedCount,
 }: {
   title: string;
   connId: number | null;
@@ -282,17 +351,36 @@ function SchemaPanel({
   mappedKeys: Set<string>;
   draggingId: string | null;
   hoverId?: string | null;
+  selectedIds?: string[];
   onDragStart?: (id: string) => void;
   onDragEnd?: () => void;
   onDropHover?: (id: string | null) => void;
   onDrop?: (n: ColumnNode) => void;
+  onToggleSelect?: (id: string) => void;
+  onTargetClick?: (n: ColumnNode) => void;
+  stagedCount?: number;
 }) {
   const accent = side === "source" ? "text-blue-400" : "text-indigo-400";
+  // mapper_tasks #1: when sources are staged and the user clicks a target
+  // column, convert that click into a multi-source edge create instead of
+  // a no-op. The cursor changes to a crosshair to signal this.
+  const targetReadyForClick =
+    side === "target" && !!onTargetClick && (stagedCount ?? 0) > 0;
   return (
     <div className="w-80 shrink-0">
       <div className={classNames("text-xs font-semibold mb-2 flex items-center gap-2", accent)}>
         <span>📥 {title}</span>
         {connId && <span className="text-zinc-500 font-normal">#{connId}</span>}
+        {side === "source" && (selectedIds?.length ?? 0) > 0 && (
+          <span className="ml-auto px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-violet-500/15 text-violet-300 border border-violet-500/30">
+            {selectedIds!.length} selected
+          </span>
+        )}
+        {side === "target" && (stagedCount ?? 0) > 0 && (
+          <span className="ml-auto px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+            {stagedCount} source{stagedCount === 1 ? "" : "s"} staged — click target
+          </span>
+        )}
       </div>
       <div className="flex flex-col rounded-xl border border-zinc-800 bg-zinc-900/40 p-2 min-h-[200px]">
         {nodes.length === 0 ? (
@@ -304,6 +392,7 @@ function SchemaPanel({
             const isMapped = mappedKeys.has(`${n.table}.${n.column}`);
             const isDragging = draggingId === n.id;
             const isHover = hoverId === n.id;
+            const isSelected = selectedIds?.includes(n.id) ?? false;
             return (
               <div
                 key={n.id}
@@ -330,19 +419,38 @@ function SchemaPanel({
                     onDrop(n);
                   }
                 }}
+                onClick={(e) => {
+                  // Source: toggle into the multi-source staging set.
+                  if (side === "source" && onToggleSelect) {
+                    // Avoid hijacking a click that just finished a drag.
+                    if (window.getSelection()?.toString()) return;
+                    onToggleSelect(n.id);
+                  }
+                  // Target: if sources are staged, a click creates the
+                  // multi-source edge.
+                  if (side === "target" && onTargetClick && targetReadyForClick) {
+                    onTargetClick(n);
+                  }
+                }}
                 className={classNames(
                   "flex items-center justify-between px-2 py-1.5 rounded text-[11px] font-mono border transition-all",
                   isDragging && "opacity-50",
-                  isMapped
+                  isSelected && "border-violet-500/50 bg-violet-500/10",
+                  isMapped && !isSelected
                     ? "border-emerald-500/30 bg-emerald-500/5"
                     : "border-transparent hover:bg-zinc-800/40",
                   isHover && "border-blue-500/40 bg-blue-500/10",
                   onDragStart ? "cursor-grab" : "",
+                  side === "source" && onToggleSelect ? "cursor-pointer" : "",
+                  targetReadyForClick ? "cursor-crosshair" : "",
                 )}
                 style={{ minHeight: 32 }}
               >
                 <span className="flex items-center gap-1.5 min-w-0">
                   {n.primary_key && <span className="text-amber-400 text-[9px]">🔑</span>}
+                  {isSelected && (
+                    <span className="text-violet-300 text-[10px]" aria-label="selected">✓</span>
+                  )}
                   <span className="text-zinc-400 mr-1">{n.table}.</span>
                   <span className={classNames(side === "source" ? "text-blue-200" : "text-indigo-200", "truncate")}>
                     {n.column}

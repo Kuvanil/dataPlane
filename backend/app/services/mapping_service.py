@@ -16,7 +16,11 @@ from app.models.mapping import (
 )
 from app.services.audit_helper import record_audit
 from app.services.mapping_validation_service import MappingValidationService
-from app.services.transformation_grammar import GrammarError, parse
+from app.services.transformation_grammar import (
+    GrammarError,
+    MULTI_SOURCE_KINDS,
+    parse,
+)
 # Importing the task object directly (instead of send_task by string name)
 # means a future rename or typo fails at import time, not silently at runtime
 # (review §11.1).
@@ -162,6 +166,24 @@ class MappingService:
                 },
             ) from exc
 
+        # FR3 follow-on: a transformation kind that only consumes one
+        # source (every kind except `concat`) must not be attached to a
+        # multi-source edge -- its compiled SQL fragment has a single
+        # positional placeholder and would mismatch N bound source
+        # values at Pipelines-execution time (mapper_tasks #1).
+        if len(sources) > 1 and (transformation or {}).get("kind") not in MULTI_SOURCE_KINDS:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "kind": "grammar_error",
+                    "message": (
+                        f"transformation kind '{(transformation or {}).get('kind')}' does not "
+                        f"support {len(sources)} source columns; only {sorted(MULTI_SOURCE_KINDS)} do"
+                    ),
+                    "location": "kind",
+                },
+            )
+
         now = datetime.now(timezone.utc).isoformat()
         audit = {
             "created_by": actor, "created_at": now,
@@ -252,6 +274,23 @@ class MappingService:
                     "location": exc.to_dict()["location"],
                 },
             ) from exc
+        # Guard against attaching >1 sources to a non-concat kind.
+        # `update_edge_transformation` doesn't change `edge.sources`,
+        # so the current sources count on the persisted edge is the
+        # correct basis for the check.
+        if len(edge.sources or []) > 1 and (transformation or {}).get("kind") not in MULTI_SOURCE_KINDS:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "kind": "grammar_error",
+                    "message": (
+                        f"transformation kind '{(transformation or {}).get('kind')}' does not "
+                        f"support {len(edge.sources or [])} source columns; "
+                        f"only {sorted(MULTI_SOURCE_KINDS)} do"
+                    ),
+                    "location": "kind",
+                },
+            )
         before = dict(edge.transformation or {})
         edge.transformation = transformation or {"kind": "direct"}
         now = datetime.now(timezone.utc).isoformat()
@@ -619,6 +658,23 @@ class MappingService:
                     "location": exc.to_dict()["location"],
                 },
             ) from exc
+
+        # Same multi-source guard as add_edge -- the accept_suggestion
+        # path goes through _add_edge_internal and must not let a
+        # non-concat kind be attached to a multi-source edge
+        # (mapper_tasks #1).
+        if len(sources) > 1 and (transformation or {}).get("kind") not in MULTI_SOURCE_KINDS:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "kind": "grammar_error",
+                    "message": (
+                        f"transformation kind '{(transformation or {}).get('kind')}' does not "
+                        f"support {len(sources)} source columns; only {sorted(MULTI_SOURCE_KINDS)} do"
+                    ),
+                    "location": "kind",
+                },
+            )
         now = datetime.now(timezone.utc).isoformat()
         audit = {
             "created_by": actor, "created_at": now,

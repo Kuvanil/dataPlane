@@ -130,6 +130,108 @@ def test_add_edge_rejects_empty_sources(db, admin, seeded_connections):
     assert e.value.status_code == 422
 
 
+def test_add_edge_blocks_multi_source_with_direct_kind(db, admin, seeded_connections):
+    """Mapper_tasks #1: >1 sources with a kind that emits a single placeholder
+    must be blocked at add_edge time, not at Pipelines-execution time."""
+    src, tgt = seeded_connections
+    m = MappingService.create_mapping(
+        db, source_id=src.id, target_id=tgt.id,
+        name="NN Direct", actor=admin.email,
+    )
+    with pytest.raises(HTTPException) as e:
+        MappingService.add_edge(
+            db, m.id,
+            target={"table": "t1", "column": "c1", "type": "TEXT", "nullable": False},
+            sources=[
+                {"table": "s1", "column": "c1", "type": "TEXT", "nullable": False},
+                {"table": "s1", "column": "c2", "type": "TEXT", "nullable": False},
+            ],
+            transformation={"kind": "direct"},
+            actor=admin.email,
+        )
+    assert e.value.status_code == 422
+    assert e.value.detail["kind"] == "grammar_error"
+    assert "does not support 2 source columns" in e.value.detail["message"]
+
+
+def test_add_edge_allows_multi_source_with_concat_kind(db, admin, seeded_connections):
+    """Counterpart to the negative case: concat is the only kind that
+    iterates sources explicitly (see transformation_grammar._sql_concat),
+    so multi-source + concat must still be accepted."""
+    src, tgt = seeded_connections
+    m = MappingService.create_mapping(
+        db, source_id=src.id, target_id=tgt.id,
+        name="Concat OK", actor=admin.email,
+    )
+    edge = MappingService.add_edge(
+        db, m.id,
+        target={"table": "t1", "column": "c1", "type": "TEXT", "nullable": False},
+        sources=[
+            {"table": "s1", "column": "c1", "type": "TEXT", "nullable": False},
+            {"table": "s1", "column": "c2", "type": "TEXT", "nullable": False},
+        ],
+        transformation={
+            "kind": "concat",
+            "parts": [
+                {"kind": "source"},
+                {"kind": "literal", "value": " "},
+                {"kind": "source"},
+            ],
+        },
+        actor=admin.email,
+    )
+    assert edge.id is not None
+    assert len(edge.sources) == 2
+
+
+def test_add_edge_allows_single_source_with_concat_kind(db, admin, seeded_connections):
+    """1-source edges with concat must also be accepted (no regression)."""
+    src, tgt = seeded_connections
+    m = MappingService.create_mapping(
+        db, source_id=src.id, target_id=tgt.id,
+        name="Concat Single", actor=admin.email,
+    )
+    edge = MappingService.add_edge(
+        db, m.id,
+        target={"table": "t1", "column": "c1", "type": "TEXT", "nullable": False},
+        sources=[{"table": "s1", "column": "c1", "type": "TEXT", "nullable": False}],
+        transformation={"kind": "concat", "parts": [{"kind": "source"}]},
+        actor=admin.email,
+    )
+    assert edge.id is not None
+
+
+def test_update_edge_transformation_blocks_multi_source_non_concat(db, admin, seeded_connections):
+    """Changing the transformation on an already-multi-source edge must also
+    be blocked if the new kind can't handle >1 sources."""
+    src, tgt = seeded_connections
+    m = MappingService.create_mapping(
+        db, source_id=src.id, target_id=tgt.id,
+        name="Update NN", actor=admin.email,
+    )
+    edge = MappingService.add_edge(
+        db, m.id,
+        target={"table": "t1", "column": "c1", "type": "TEXT", "nullable": False},
+        sources=[
+            {"table": "s1", "column": "c1", "type": "TEXT", "nullable": False},
+            {"table": "s1", "column": "c2", "type": "TEXT", "nullable": False},
+        ],
+        transformation={
+            "kind": "concat",
+            "parts": [{"kind": "source"}, {"kind": "source"}],
+        },
+        actor=admin.email,
+    )
+    # Trying to change the transformation on a multi-source edge to a
+    # kind that only handles one source must be rejected.
+    with pytest.raises(HTTPException) as e:
+        MappingService.update_edge_transformation(
+            db, m.id, edge.id, {"kind": "direct"}, actor=admin.email,
+        )
+    assert e.value.status_code == 422
+    assert e.value.detail["kind"] == "grammar_error"
+
+
 def test_remove_edge_emits_audit(db, admin, seeded_connections):
     src, tgt = seeded_connections
     m = MappingService.create_mapping(
