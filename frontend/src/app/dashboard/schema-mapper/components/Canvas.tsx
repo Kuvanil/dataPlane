@@ -23,6 +23,11 @@ interface ColumnNode {
   table: string;
   column: string;
   type: string;
+  // True when the column accepts NULL (default). False means NOT NULL.
+  // Already in the connector schema payload (e.g. jdbc.py); TRD FR1
+  // requires the UI to display this in both source and target panels
+  // before any mapping exists (see mapper_tasks/03_nullability_display.md).
+  nullable: boolean;
   primary_key: boolean;
   edge_id?: number; // if already mapped
   side: "source" | "target";
@@ -85,10 +90,10 @@ export default function Canvas({
           return;
         }
         const [s, t] = await Promise.all([
-          api.get<{ schema: Record<string, Array<{ name: string; type: string; primary_key?: boolean }>> }>(
+          api.get<{ schema: Record<string, Array<{ name: string; type: string; primary_key?: boolean; nullable?: boolean }>> }>(
             `/api/v1/connectors/${m.source_id}/schema`,
           ),
-          api.get<{ schema: Record<string, Array<{ name: string; type: string; primary_key?: boolean }>> }>(
+          api.get<{ schema: Record<string, Array<{ name: string; type: string; primary_key?: boolean; nullable?: boolean }>> }>(
             `/api/v1/connectors/${m.target_id}/schema`,
           ),
         ]);
@@ -235,7 +240,7 @@ export default function Canvas({
 }
 
 function flattenSchema(
-  schema: Record<string, Array<{ name: string; type: string; primary_key?: boolean }>>,
+  schema: Record<string, Array<{ name: string; type: string; primary_key?: boolean; nullable?: boolean }>>,
   side: "source" | "target",
 ): ColumnNode[] {
   const out: ColumnNode[] = [];
@@ -246,6 +251,9 @@ function flattenSchema(
         table,
         column: col.name,
         type: col.type,
+        // Default to nullable=true to match the backend's own default in
+        // app/connectors/jdbc.py if a connector implementation ever omits it.
+        nullable: col.nullable !== false,
         primary_key: !!col.primary_key,
         side,
       });
@@ -340,7 +348,21 @@ function SchemaPanel({
                     {n.column}
                   </span>
                 </span>
-                <span className="text-zinc-600 text-[10px]">{n.type}</span>
+                <span className="text-zinc-600 text-[10px]">
+                  {n.type}
+                  {/* TRD FR1: surface nullability in the raw schema panels.
+                      NOT NULL columns get a small `*` suffix so the
+                      distinction is visible before any mapping exists. */}
+                  {!n.nullable && (
+                    <span
+                      className="ml-1 text-amber-400 font-semibold"
+                      title="NOT NULL"
+                      aria-label="NOT NULL"
+                    >
+                      *
+                    </span>
+                  )}
+                </span>
               </div>
             );
           })
