@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError } from "@/lib/api";
+import { api, ApiError, setUnauthorizedHandler } from "@/lib/api";
 import type {
   AISuggestion,
   EdgeTransformationUpdate,
@@ -127,7 +127,9 @@ export function useMapping(): UseMappingResult {
     };
   }, []);
 
-  // 30 s autosave flush.
+  // 30 s autosave flush + visibilitychange + beforeunload + 401 handler.
+  // All three are mounted/unmounted together because they share the same
+  // flushDirty / dirtyQueueRef lifecycle (mapper_tasks #5).
   useEffect(() => {
     flushTimerRef.current = setInterval(() => {
       if (dirtyQueueRef.current.length > 0) void flushDirty();
@@ -136,9 +138,49 @@ export function useMapping(): UseMappingResult {
       if (document.visibilityState === "hidden") void flushDirty();
     };
     document.addEventListener("visibilitychange", onVis);
+
+    // beforeunload: warn the user if there are unsaved edits queued. The
+    // browser shows its own native confirmation dialog. We can't reliably
+    // flush async PUTs here (the browser kills in-flight requests); the
+    // best we can do is ask the user to cancel the navigation.
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (dirtyQueueRef.current.length > 0) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+
+    // 401: best-effort flush + warning before api.ts clears the token
+    // and navigates to /login. The flush will fail (the token is already
+    // expired), but the user is told their last edit didn't save — the
+    // silent-redirect was the TRD NFR violation mapper_tasks #5 fixed.
+    const onUnauthorized = () => {
+      const pending = dirtyQueueRef.current.length;
+      if (pending > 0) {
+        // Persist a flag the login page can read to surface a warning.
+        try {
+          localStorage.setItem(
+            "dp_session_expired_with_pending",
+            String(pending),
+          );
+        } catch {
+          // localStorage may be unavailable (private mode etc.) — best-effort.
+        }
+        showToast(
+          "error",
+          `Session expired with ${pending} unsaved change${pending === 1 ? "" : "s"}. ` +
+            `Log back in and re-apply your last edit.`,
+        );
+      }
+    };
+    setUnauthorizedHandler(onUnauthorized);
+
     return () => {
       if (flushTimerRef.current) clearInterval(flushTimerRef.current);
       document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      setUnauthorizedHandler(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
