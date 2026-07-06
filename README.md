@@ -272,6 +272,8 @@ Demo data is seeded automatically on first API startup. The four SQLite files ar
 
 ## Production Standards
 
+Agent-facing docs: [`CLAUDE.md`](CLAUDE.md) (entrypoint, repo map, working loop), [`SKILLS.md`](SKILLS.md) (task playbooks), [`MEMORY.md`](MEMORY.md) (cross-session project state). The coding-standards contract itself lives in `prompts/`.
+
 This codebase follows the conventions defined in `prompts/`:
 
 | Standard | Implementation |

@@ -120,6 +120,8 @@ export default function SchemaMapperPage() {
           onSelect={(id) => setSelectedId(id)}
           onCreate={m.create}
           role={m.role}
+          renamedMappingId={mapping?.id ?? null}
+          renamedMappingName={mapping?.name ?? null}
         />
 
         {!mapping ? (
@@ -162,17 +164,13 @@ export default function SchemaMapperPage() {
                   canEdit={canEdit}
                   role={m.role}
                   onSelectEdge={(id) => m.selectEdge(id)}
-                  onCreateEdge={async (target, sources, transformation) => {
-                    await m.addEdge({
-                      target,
-                      sources,
-                      // mapper_tasks #1: Canvas now computes the right
-                      // transformation (direct for 1 source, concat for
-                      // 2+). This page no longer hardcodes `direct` since
-                      // the backend guard rejects multi-source + non-concat.
-                      transformation,
-                    });
-                  }}
+                  onCreateEdge={(target, sources, transformation) =>
+                    // mapper_tasks #1: Canvas now computes the right
+                    // transformation (direct for 1 source, concat for
+                    // 2+) and needs the created edge back to auto-select
+                    // multi-source edges for review.
+                    m.addEdge({ target, sources, transformation })
+                  }
                 />
                 {m.validation && (
                   <ValidationPanel

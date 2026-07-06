@@ -26,7 +26,12 @@ class BaseConnector(ABC):
     def get_table_schema(self, table_name: str) -> List[Dict[str, Any]]:
         """
         Fetch columns of a table returning list of dicts:
-        [{'name': 'id', 'type': 'INT', 'nullable': False, 'primary_key': True}]
+        [{'name': 'id', 'type': 'INT', 'nullable': False, 'primary_key': True,
+          'foreign_keys': [{'references_table': 'orders', 'references_column': 'id'}]}]
+
+        'foreign_keys' is optional (omit or return [] if the connector can't
+        determine it) -- callers must not assume every implementation
+        populates it.
         """
         pass
 

@@ -269,82 +269,163 @@ def schema_wide_match_task(
         db.close()
 
 
-@celery_app.task(name="app.tasks.ai_tasks.check_schema_drift_task", bind=True)
-def check_schema_drift_task(self) -> Dict[str, Any]:
-    """Periodic task: snapshot all DB schemas and detect drift."""
+def _check_single_connection_drift(
+    db: SessionLocal, conn: DBConnection, actor: str = "drift-monitor"
+) -> Dict[str, Any]:
+    """Check & persist drift for a single connection.
+
+    Shared helper called both by the periodic Celery task (all connections)
+    and by the on-demand ``POST /api/v1/schema/{id}/rescan`` endpoint (one
+    connection).  Returns a dict with connection name, whether drift was
+    detected, and the computed diff (if any).
+
+    Side-effects (all within *caller's* transaction — no commit here):
+        - Creates a new ``SchemaSnapshot`` row.
+        - If drift is detected, creates a ``DriftEvent`` row AND an
+          ``AuditLog`` row.
+        - Prunes old snapshots (keeps last 10 per connection).
+    """
     from app.models.schema_snapshot import SchemaSnapshot
+    from app.models.drift_event import DriftEvent
     from app.models.audit import AuditLog
     from app.services.diff_service import DiffService
 
+    result: Dict[str, Any] = {"connection": conn.name, "drift": False}
+    try:
+        schema = SchemaService.get_full_schema(conn)
+    except Exception as exc:
+        logger.warning("Drift check: schema fetch failed for '%s': %s", conn.name, exc)
+        result["error"] = str(exc)
+        return result
+
+    schema_str = json.dumps(schema, sort_keys=True, default=str)
+    current_hash = hashlib.sha256(schema_str.encode()).hexdigest()
+
+    latest = (
+        db.query(SchemaSnapshot)
+        .filter(SchemaSnapshot.connection_id == conn.id)
+        .order_by(SchemaSnapshot.captured_at.desc())
+        .first()
+    )
+
+    previous_snapshot_id = None
+    if latest is not None:
+        previous_snapshot_id = latest.id
+
+    # Save new snapshot FIRST so we can reference its id in the DriftEvent
+    snapshot = SchemaSnapshot(
+        connection_id=conn.id,
+        connection_name=conn.name,
+        schema_hash=current_hash,
+        schema_json=schema,
+    )
+    db.add(snapshot)
+    db.flush()  # assign snapshot.id before we reference it below
+
+    if latest is None:
+        logger.info("Drift check: first snapshot for '%s'", conn.name)
+    elif latest.schema_hash != current_hash:
+        result["drift"] = True
+        diff = DiffService.compare_schemas(latest.schema_json or {}, schema)
+        table_diffs = diff.get("table_diffs", {})
+
+        # ── Build column-level change lists from the computed table_diffs ────
+        columns_added: list = []
+        columns_removed: list = []
+        type_changes: list = []
+
+        for table, td in table_diffs.items():
+            # compare_tables(source=old_snapshot, target=new_live_schema):
+            #   missing_in_target = in old but not in new = REMOVED
+            #   missing_in_source  = in new but not in old = ADDED
+            for col_name in td.get("missing_in_source", []):
+                columns_added.append({"table": table, "column": col_name})
+            for col_name in td.get("missing_in_target", []):
+                columns_removed.append({"table": table, "column": col_name})
+            for tm in td.get("type_mismatches", []):
+                type_changes.append({
+                    "table": table,
+                    "column": tm["column"],
+                    "old_type": tm["source_type"],
+                    "new_type": tm["target_type"],
+                })
+
+        # DiffService.compare_schemas(old_snapshot, new_live_schema):
+        #   missing_tables_in_target = in old but not in new = REMOVED
+        #   missing_tables_in_source  = in new but not in old = ADDED
+        #   compare_tables: missing_in_target = in old but not in new = REMOVED
+        #                  missing_in_source  = in new but not in old = ADDED
+        tables_removed = diff.get("missing_tables_in_target", [])
+        tables_added = diff.get("missing_tables_in_source", [])
+
+        # Persist DriftEvent — points to the NEW snapshot (the one that
+        # detected the drift), with previous_snapshot_id referencing the old.
+        db.add(DriftEvent(
+            connection_id=conn.id,
+            snapshot_id=snapshot.id,
+            previous_snapshot_id=previous_snapshot_id,
+            tables_added=tables_added,
+            tables_removed=tables_removed,
+            columns_added=columns_added,
+            columns_removed=columns_removed,
+            type_changes=type_changes,
+        ))
+
+        # Persist AuditLog (existing behaviour preserved)
+        audit = AuditLog(
+            event_type="schema_drift_detected",
+            actor=actor,
+            connection_id=conn.id,
+            connection_name=conn.name,
+            payload={
+                "previous_hash": latest.schema_hash,
+                "current_hash": current_hash,
+                "diff_summary": {
+                    "matched_tables": len(diff.get("matched_tables", [])),
+                    "tables_added": tables_added,
+                    "tables_removed": tables_removed,
+                    "columns_added": len(columns_added),
+                    "columns_removed": len(columns_removed),
+                    "type_changes": len(type_changes),
+                },
+            },
+            status="warning",
+        )
+        db.add(audit)
+        logger.warning(
+            "Schema drift detected for '%s': +%d tables, -%d tables, "
+            "+%d columns, -%d columns, %d type changes",
+            conn.name,
+            len(tables_added), len(tables_removed),
+            len(columns_added), len(columns_removed),
+            len(type_changes),
+        )
+        result["diff"] = diff
+
+    # Keep only last 10 snapshots per connection
+    old_snapshots = (
+        db.query(SchemaSnapshot)
+        .filter(SchemaSnapshot.connection_id == conn.id)
+        .order_by(SchemaSnapshot.captured_at.desc())
+        .offset(10)
+        .all()
+    )
+    for old in old_snapshots:
+        db.delete(old)
+
+    return result
+
+
+@celery_app.task(name="app.tasks.ai_tasks.check_schema_drift_task", bind=True)
+def check_schema_drift_task(self) -> Dict[str, Any]:
+    """Periodic task: snapshot all DB schemas and detect drift."""
     db = SessionLocal()
     results = []
     try:
         connections = db.query(DBConnection).all()
         for conn in connections:
-            try:
-                schema = SchemaService.get_full_schema(conn)
-            except Exception as exc:
-                logger.warning("Drift check: schema fetch failed for '%s': %s", conn.name, exc)
-                continue
-
-            schema_str = json.dumps(schema, sort_keys=True, default=str)
-            current_hash = hashlib.sha256(schema_str.encode()).hexdigest()
-
-            latest = (
-                db.query(SchemaSnapshot)
-                .filter(SchemaSnapshot.connection_id == conn.id)
-                .order_by(SchemaSnapshot.captured_at.desc())
-                .first()
-            )
-
-            drift_detected = False
-            if latest is None:
-                logger.info("Drift check: first snapshot for '%s'", conn.name)
-            elif latest.schema_hash != current_hash:
-                drift_detected = True
-                diff = DiffService.compare_schemas(latest.schema_json or {}, schema)
-                audit = AuditLog(
-                    event_type="schema_drift_detected",
-                    actor="drift-monitor",
-                    connection_id=conn.id,
-                    connection_name=conn.name,
-                    payload={
-                        "previous_hash": latest.schema_hash,
-                        "current_hash": current_hash,
-                        "diff_summary": {
-                            "matched_tables": len(diff.get("matched_tables", [])),
-                            "missing_in_target": diff.get("missing_tables_in_target", []),
-                            "missing_in_source": diff.get("missing_tables_in_source", []),
-                        },
-                    },
-                    status="warning",
-                )
-                db.add(audit)
-                logger.warning("Schema drift detected for connection '%s'", conn.name)
-                results.append({"connection": conn.name, "drift": True})
-            else:
-                results.append({"connection": conn.name, "drift": False})
-
-            # Save new snapshot
-            snapshot = SchemaSnapshot(
-                connection_id=conn.id,
-                connection_name=conn.name,
-                schema_hash=current_hash,
-                schema_json=schema,
-            )
-            db.add(snapshot)
-
-            # Keep only last 10 snapshots per connection
-            old_snapshots = (
-                db.query(SchemaSnapshot)
-                .filter(SchemaSnapshot.connection_id == conn.id)
-                .order_by(SchemaSnapshot.captured_at.desc())
-                .offset(10)
-                .all()
-            )
-            for old in old_snapshots:
-                db.delete(old)
-
+            r = _check_single_connection_drift(db, conn)
+            results.append(r)
         db.commit()
     except Exception as exc:
         logger.error("check_schema_drift_task failed: %s", exc)

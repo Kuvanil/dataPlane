@@ -44,25 +44,45 @@ class MySQLConnector(BaseConnector):
         cursor = conn.cursor()
         cursor.execute(f"""
             SELECT
-                COLUMN_NAME   AS name,
-                DATA_TYPE     AS type,
-                IS_NULLABLE   AS nullable,
-                COLUMN_KEY    AS col_key
-            FROM information_schema.COLUMNS
-            WHERE TABLE_SCHEMA = DATABASE()
-              AND TABLE_NAME   = %s
-            ORDER BY ORDINAL_POSITION
+                c.COLUMN_NAME   AS name,
+                c.DATA_TYPE     AS type,
+                c.IS_NULLABLE   AS nullable,
+                c.COLUMN_KEY    AS col_key,
+                k.REFERENCED_TABLE_NAME  AS ref_table,
+                k.REFERENCED_COLUMN_NAME AS ref_column
+            FROM information_schema.COLUMNS c
+            LEFT JOIN information_schema.KEY_COLUMN_USAGE k
+              ON c.TABLE_SCHEMA = k.TABLE_SCHEMA
+             AND c.TABLE_NAME = k.TABLE_NAME
+             AND c.COLUMN_NAME = k.COLUMN_NAME
+             AND k.REFERENCED_TABLE_NAME IS NOT NULL
+            WHERE c.TABLE_SCHEMA = DATABASE()
+              AND c.TABLE_NAME   = %s
+            ORDER BY c.ORDINAL_POSITION
         """, (table_name,))
         rows = cursor.fetchall()
-        schema = []
+        # A LEFT JOIN to KEY_COLUMN_USAGE can return >1 row per column if the
+        # column participates in more than one FK constraint; group by name
+        # so the column list itself never duplicates, only its foreign_keys.
+        schema_by_name: Dict[str, Dict[str, Any]] = {}
+        order: List[str] = []
         for r in rows:
-            schema.append({
-                "name": r["name"],
-                "type": r["type"],
-                "nullable": r["nullable"] == "YES",
-                "primary_key": r["col_key"] == "PRI",
-            })
-        return schema
+            name = r["name"]
+            if name not in schema_by_name:
+                order.append(name)
+                schema_by_name[name] = {
+                    "name": name,
+                    "type": r["type"],
+                    "nullable": r["nullable"] == "YES",
+                    "primary_key": r["col_key"] == "PRI",
+                    "foreign_keys": [],
+                }
+            if r.get("ref_table"):
+                schema_by_name[name]["foreign_keys"].append({
+                    "references_table": r["ref_table"],
+                    "references_column": r["ref_column"],
+                })
+        return [schema_by_name[n] for n in order]
 
     def execute_query(self, sql: str) -> List[Dict[str, Any]]:
         """Execute a read-only query and return results."""

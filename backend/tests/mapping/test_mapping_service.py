@@ -232,6 +232,89 @@ def test_update_edge_transformation_blocks_multi_source_non_concat(db, admin, se
     assert e.value.detail["kind"] == "grammar_error"
 
 
+def test_add_edge_rejects_concat_with_fewer_source_parts_than_sources(db, admin, seeded_connections):
+    """Completeness review of mapper_tasks #1: the multi-source guard must
+    also reject a concat whose 'source' parts under-count the edge's actual
+    sources, not just a non-concat kind. Under-consumption previously
+    compiled silently (only over-consumption raised in _sql_concat)."""
+    src, tgt = seeded_connections
+    m = MappingService.create_mapping(
+        db, source_id=src.id, target_id=tgt.id,
+        name="Concat Undercount", actor=admin.email,
+    )
+    with pytest.raises(HTTPException) as e:
+        MappingService.add_edge(
+            db, m.id,
+            target={"table": "t1", "column": "c1", "type": "TEXT", "nullable": False},
+            sources=[
+                {"table": "s1", "column": "c1", "type": "TEXT", "nullable": False},
+                {"table": "s1", "column": "c2", "type": "TEXT", "nullable": False},
+            ],
+            transformation={"kind": "concat", "parts": [{"kind": "source"}]},
+            actor=admin.email,
+        )
+    assert e.value.status_code == 422
+    assert e.value.detail["kind"] == "grammar_error"
+    assert "concat.parts" in e.value.detail["location"]
+
+
+def test_update_edge_transformation_rejects_concat_part_count_mismatch(db, admin, seeded_connections):
+    """Same under-consumption guard, exercised via update_edge_transformation
+    (e.g. TransformEditor changing an existing multi-source edge's parts)."""
+    src, tgt = seeded_connections
+    m = MappingService.create_mapping(
+        db, source_id=src.id, target_id=tgt.id,
+        name="Concat Undercount Update", actor=admin.email,
+    )
+    edge = MappingService.add_edge(
+        db, m.id,
+        target={"table": "t1", "column": "c1", "type": "TEXT", "nullable": False},
+        sources=[
+            {"table": "s1", "column": "c1", "type": "TEXT", "nullable": False},
+            {"table": "s1", "column": "c2", "type": "TEXT", "nullable": False},
+        ],
+        transformation={"kind": "concat", "parts": [{"kind": "source"}, {"kind": "source"}]},
+        actor=admin.email,
+    )
+    with pytest.raises(HTTPException) as e:
+        MappingService.update_edge_transformation(
+            db, m.id, edge.id,
+            {"kind": "concat", "parts": [{"kind": "source"}]},
+            actor=admin.email,
+        )
+    assert e.value.status_code == 422
+    assert e.value.detail["kind"] == "grammar_error"
+
+
+def test_add_edge_rejects_second_edge_to_already_mapped_target(db, admin, seeded_connections):
+    """Completeness review of mapper_tasks #1: N:1 is one edge with many
+    sources, not two competing edges to the same target column -- the
+    latter is ambiguous at Pipelines-execution time and was previously
+    unguarded (only source-side reuse was checked, never target-side)."""
+    src, tgt = seeded_connections
+    m = MappingService.create_mapping(
+        db, source_id=src.id, target_id=tgt.id,
+        name="Target Collision", actor=admin.email,
+    )
+    MappingService.add_edge(
+        db, m.id,
+        target={"table": "t1", "column": "c1", "type": "TEXT", "nullable": False},
+        sources=[{"table": "s1", "column": "c1", "type": "TEXT", "nullable": False}],
+        transformation={"kind": "direct"},
+        actor=admin.email,
+    )
+    with pytest.raises(HTTPException) as e:
+        MappingService.add_edge(
+            db, m.id,
+            target={"table": "t1", "column": "c1", "type": "TEXT", "nullable": False},
+            sources=[{"table": "s1", "column": "c2", "type": "TEXT", "nullable": False}],
+            transformation={"kind": "direct"},
+            actor=admin.email,
+        )
+    assert e.value.status_code == 409
+    assert "already mapped" in e.value.detail.lower()
+
+
 def test_remove_edge_emits_audit(db, admin, seeded_connections):
     src, tgt = seeded_connections
     m = MappingService.create_mapping(

@@ -55,6 +55,21 @@ class JDBCConnector(BaseConnector):
         except Exception:
             pass
 
+        fks_by_column: Dict[str, List[Dict[str, str]]] = {}
+        try:
+            for fk in insp.get_foreign_keys(table_name, schema=self.schema):
+                referred_table = fk.get("referred_table")
+                for local_col, remote_col in zip(
+                    fk.get("constrained_columns", []),
+                    fk.get("referred_columns", []),
+                ):
+                    fks_by_column.setdefault(local_col, []).append({
+                        "references_table": referred_table,
+                        "references_column": remote_col,
+                    })
+        except Exception:
+            pass
+
         schema_list = []
         for col in columns:
             schema_list.append({
@@ -62,6 +77,7 @@ class JDBCConnector(BaseConnector):
                 "type": str(col["type"]),
                 "nullable": col.get("nullable", True),
                 "primary_key": col["name"] in pk_cols,
+                "foreign_keys": fks_by_column.get(col["name"], []),
             })
         return schema_list
 

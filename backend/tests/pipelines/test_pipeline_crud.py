@@ -250,3 +250,76 @@ def test_delete_pipeline_emits_audit(db, admin, seeded_connections, seeded_publi
     )
     assert audit is not None
     assert audit.payload["pipeline_id"] == p.id
+
+
+# ── Bug #14: mapping must belong to the pipeline's connections ─────
+
+
+def test_create_pipeline_rejects_mismatched_source_connection(
+    db, admin, seeded_connections, seeded_published_mapping
+):
+    """A mapping published against connections A→B can't back a pipeline
+    declaring a different source connection (Bug #14)."""
+    from app.models.connection import DBConnection
+    _, tgt = seeded_connections
+    mapping, _ = seeded_published_mapping
+    other = DBConnection(name="OtherSrc", type="sqlite", config={"path": "/tmp/other.db"})
+    db.add(other)
+    db.commit()
+    db.refresh(other)
+    with pytest.raises(HTTPException) as e:
+        PipelineCRUD.create_pipeline(
+            db,
+            name="WrongSrc",
+            source_connection_id=other.id,
+            target_connection_id=tgt.id,
+            mapping_id=mapping.id,
+            actor=admin.email,
+        )
+    assert e.value.status_code == 422
+    assert "published against" in e.value.detail
+
+
+def test_create_pipeline_rejects_mismatched_target_connection(
+    db, admin, seeded_connections, seeded_published_mapping
+):
+    from app.models.connection import DBConnection
+    src, _ = seeded_connections
+    mapping, _ = seeded_published_mapping
+    other = DBConnection(name="OtherTgt", type="sqlite", config={"path": "/tmp/other2.db"})
+    db.add(other)
+    db.commit()
+    db.refresh(other)
+    with pytest.raises(HTTPException) as e:
+        PipelineCRUD.create_pipeline(
+            db,
+            name="WrongTgt",
+            source_connection_id=src.id,
+            target_connection_id=other.id,
+            mapping_id=mapping.id,
+            actor=admin.email,
+        )
+    assert e.value.status_code == 422
+    assert "published against" in e.value.detail
+
+
+def test_create_pipeline_rejects_mapping_with_lost_connections(
+    db, admin, seeded_connections, seeded_published_mapping
+):
+    """A mapping whose original connection was deleted (source_id SET NULL)
+    has no usable baseline identity → 422 (Bug #14 edge case)."""
+    src, tgt = seeded_connections
+    mapping, _ = seeded_published_mapping
+    mapping.source_id = None
+    db.commit()
+    with pytest.raises(HTTPException) as e:
+        PipelineCRUD.create_pipeline(
+            db,
+            name="LostConn",
+            source_connection_id=src.id,
+            target_connection_id=tgt.id,
+            mapping_id=mapping.id,
+            actor=admin.email,
+        )
+    assert e.value.status_code == 422
+    assert "no longer exist" in e.value.detail

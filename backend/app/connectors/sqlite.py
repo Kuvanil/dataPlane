@@ -36,14 +36,24 @@ class SQLiteConnector(BaseConnector):
         cursor = conn.cursor()
         cursor.execute(f"PRAGMA table_info({table_name})")
         columns = cursor.fetchall()
-        
+
+        fk_cursor = conn.cursor()
+        fk_cursor.execute(f"PRAGMA foreign_key_list({table_name})")
+        fks_by_column: Dict[str, List[Dict[str, str]]] = {}
+        for r in fk_cursor.fetchall():
+            fks_by_column.setdefault(r["from"], []).append({
+                "references_table": r["table"],
+                "references_column": r["to"],
+            })
+
         schema = []
         for col in columns:
             schema.append({
                 "name": col["name"],
                 "type": col["type"],
                 "nullable": col["notnull"] == 0,
-                "primary_key": col["pk"] == 1
+                "primary_key": col["pk"] == 1,
+                "foreign_keys": fks_by_column.get(col["name"], []),
             })
         return schema
 

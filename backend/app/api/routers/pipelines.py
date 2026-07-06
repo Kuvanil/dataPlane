@@ -26,8 +26,6 @@ from app.schemas.pipeline import (
     PipelineReadWithRelations,
     PipelineUpdate,
     PipelineRunRead,
-    RetryPolicyUpsert,
-    ScheduleUpsert,
 )
 from app.services.audit_helper import record_audit
 from app.services.pipeline_service import PipelineCRUD, PipelineService

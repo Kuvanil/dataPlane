@@ -12,6 +12,7 @@ from app.api.routers import audit as audit_router
 from app.api.routers import auth as auth_router
 from app.api.routers import autopilot as autopilot_router
 from app.api.routers import mappings as mappings_router
+from app.api.routers import schema_catalog as schema_catalog_router
 from app.core.celery_app import celery_app  # noqa: F401  (registers tasks on import)
 from app.core.config import settings
 from app.core.database import Base, engine, SessionLocal
@@ -20,6 +21,8 @@ from app.models.audit import AuditLog  # noqa: F401
 from app.models.query_history import QueryHistory  # noqa: F401
 from app.models.chat_session import ChatMessage  # noqa: F401
 from app.models.schema_snapshot import SchemaSnapshot  # noqa: F401
+from app.models.drift_event import DriftEvent  # noqa: F401  (Task #6: persisted column-level drift)
+from app.models.schema_catalog import CatalogTable, CatalogColumn, CatalogForeignKey  # noqa: F401  (Task #1: persisted schema catalog)
 from app.models.user import User  # noqa: F401
 from app.models.autopilot import AutopilotRun, AutopilotLog  # noqa: F401
 from app.models.mapping import (  # noqa: F401  (ensure mapping tables are created)
@@ -283,6 +286,7 @@ app.include_router(query.router, prefix="/api/v1/query", tags=["Query Studio"])
 app.include_router(askdata.router, prefix="/api/v1/askdata", tags=["AskData Bot"])
 app.include_router(mapper.router, prefix="/api/v1/mapper", tags=["Schema Mapper"])
 app.include_router(mappings_router.router, prefix="/api/v1/mappings", tags=["Schema Mapper — Mappings"])
+app.include_router(schema_catalog_router.router, prefix="/api/v1/catalog", tags=["Schema Catalog"])
 app.include_router(tasks_router.router, prefix="/api/v1/tasks", tags=["Tasks"])
 app.include_router(pipelines.router, prefix="/api/v1/pipelines", tags=["Pipelines"])
 app.include_router(audit_router.router, prefix="/api/v1/audit", tags=["Audit Trail"])

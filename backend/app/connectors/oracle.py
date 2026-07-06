@@ -80,12 +80,25 @@ class OracleConnector(BaseConnector):
         if self._sim_mode:
             cur.execute(f"PRAGMA table_info({table_name})")
             rows = cur.fetchall()
+            fk_cur = conn.cursor()
+            fk_cur.execute(f"PRAGMA foreign_key_list({table_name})")
+            fks_by_column: Dict[str, List[Dict[str, str]]] = {}
+            for r in fk_cur.fetchall():
+                # PRAGMA foreign_key_list columns: (id, seq, table, from, to, ...)
+                col = r["from"] if isinstance(r, dict) else r[3]
+                ref_table = r["table"] if isinstance(r, dict) else r[2]
+                ref_col = r["to"] if isinstance(r, dict) else r[4]
+                fks_by_column.setdefault(col, []).append({
+                    "references_table": ref_table,
+                    "references_column": ref_col,
+                })
             return [
                 {
-                    "name": r["name"] if isinstance(r, dict) else r[1],
+                    "name": (name := r["name"] if isinstance(r, dict) else r[1]),
                     "type": r["type"] if isinstance(r, dict) else r[2],
                     "nullable": (r["notnull"] if isinstance(r, dict) else r[3]) == 0,
                     "primary_key": (r["pk"] if isinstance(r, dict) else r[5]) == 1,
+                    "foreign_keys": fks_by_column.get(name, []),
                 }
                 for r in rows
             ]
@@ -101,6 +114,42 @@ class OracleConnector(BaseConnector):
         """, {"owner": self.user, "tbl": table_name})
         cols = cur.fetchall()
         desc = [d[0].lower() for d in cur.description]
+
+        pk_cur = conn.cursor()
+        pk_cur.execute("""
+            SELECT acc.column_name
+            FROM all_constraints ac
+            JOIN all_cons_columns acc
+              ON ac.constraint_name = acc.constraint_name
+             AND ac.owner = acc.owner
+            WHERE ac.constraint_type = 'P'
+              AND ac.owner      = UPPER(:owner)
+              AND ac.table_name = UPPER(:tbl)
+        """, {"owner": self.user, "tbl": table_name})
+        pk_cols = {row[0] for row in pk_cur.fetchall()}
+
+        fk_cur = conn.cursor()
+        fk_cur.execute("""
+            SELECT acc.column_name, r_acc.table_name AS references_table,
+                   r_acc.column_name AS references_column
+            FROM all_constraints ac
+            JOIN all_cons_columns acc
+              ON ac.constraint_name = acc.constraint_name
+             AND ac.owner = acc.owner
+            JOIN all_cons_columns r_acc
+              ON ac.r_constraint_name = r_acc.constraint_name
+             AND ac.owner = r_acc.owner
+            WHERE ac.constraint_type = 'R'
+              AND ac.owner      = UPPER(:owner)
+              AND ac.table_name = UPPER(:tbl)
+        """, {"owner": self.user, "tbl": table_name})
+        fks_by_column: Dict[str, List[Dict[str, str]]] = {}
+        for row in fk_cur.fetchall():
+            fks_by_column.setdefault(row[0], []).append({
+                "references_table": row[1],
+                "references_column": row[2],
+            })
+
         schema = []
         for row in cols:
             rd = dict(zip(desc, row))
@@ -108,7 +157,8 @@ class OracleConnector(BaseConnector):
                 "name": rd["name"],
                 "type": rd["type"],
                 "nullable": rd["nullable"] == "Y",
-                "primary_key": False,
+                "primary_key": rd["name"] in pk_cols,
+                "foreign_keys": fks_by_column.get(rd["name"], []),
             })
         return schema
 

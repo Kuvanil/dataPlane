@@ -12,7 +12,7 @@ Naming follows the established convention in app/models/mapping.py.
 from __future__ import annotations
 
 from sqlalchemy import (
-    CheckConstraint,
+    Boolean, CheckConstraint,
     Column, Integer, String, Text, DateTime, ForeignKey, JSON, Index,
 )
 from sqlalchemy.orm import relationship
@@ -44,7 +44,7 @@ class Pipeline(Base):
         Integer, ForeignKey("mapping_versions.id", ondelete="RESTRICT"),
         nullable=False,
     )
-    enabled = Column(Integer, nullable=False, default=1)  # 1=true, 0=false (SQLite-friendly)
+    enabled = Column(Boolean, nullable=False, default=True)
     created_by = Column(String, nullable=False, default="system")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(),
@@ -54,8 +54,11 @@ class Pipeline(Base):
     source_connection = relationship("DBConnection", foreign_keys=[source_connection_id])
     target_connection = relationship("DBConnection", foreign_keys=[target_connection_id])
 
-    schedules = relationship(
+    # Schedule.pipeline_id is unique — 1:1, matching the singular
+    # `schedule` field in PipelineReadWithRelations (Task #4 wires it).
+    schedule = relationship(
         "Schedule", back_populates="pipeline", cascade="all, delete-orphan",
+        uselist=False,
     )
     retry_policy = relationship(
         "RetryPolicy", back_populates="pipeline", cascade="all, delete-orphan",
@@ -75,13 +78,13 @@ class Schedule(Base):
         nullable=False, unique=True,
     )
     cron_expression = Column(String, nullable=False)
-    enabled = Column(Integer, nullable=False, default=1)
+    enabled = Column(Boolean, nullable=False, default=True)
     timezone = Column(String, nullable=False, default="UTC")
     # Maintained by the scheduler (Task #4). Null until the schedule is
     # first registered with the beat; scheduler populates on every tick.
     next_run_at = Column(DateTime(timezone=True), nullable=True)
 
-    pipeline = relationship("Pipeline", back_populates="schedules")
+    pipeline = relationship("Pipeline", back_populates="schedule")
 
 
 class RetryPolicy(Base):

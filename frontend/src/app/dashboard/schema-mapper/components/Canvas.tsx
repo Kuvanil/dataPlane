@@ -20,7 +20,7 @@ interface CanvasProps {
     target: TargetRef,
     sources: SourceRef[],
     transformation: TransformationPayload,
-  ) => Promise<void>;
+  ) => Promise<FieldMapping | null>;
 }
 
 interface ColumnNode {
@@ -165,10 +165,24 @@ export default function Canvas({
   const maxRows = Math.max(sourceColumns.length, targetColumns.length);
   const svgHeight = Math.max(280, maxRows * rowHeight + 24);
 
+  // O(1) id -> ColumnNode lookup, mirroring the sourceMappedKeys/
+  // targetEdgeByColumn Map/Set pattern already used above instead of
+  // re-scanning sourceColumns per lookup.
+  const sourceColumnsById = useMemo(() => {
+    const map = new Map<string, ColumnNode>();
+    for (const c of sourceColumns) map.set(c.id, c);
+    return map;
+  }, [sourceColumns]);
+
   const onDrop = async (target: ColumnNode) => {
     if (!canEdit || !draggingSourceId || creating) return;
-    const source = sourceColumns.find((c) => c.id === draggingSourceId);
+    const source = sourceColumnsById.get(draggingSourceId);
     if (!source) return;
+    // A drag-and-drop is a deliberate single-source action; clear any
+    // staged multi-select so it can't bleed into a later target click
+    // (previously a staged selection survived a drag-drop and could fire
+    // an unrelated multi-source edge on the next target click).
+    setSelectedSourceIds([]);
     setCreating(true);
     setDraggingSourceId(null);
     setHoverTargetId(null);
@@ -178,11 +192,14 @@ export default function Canvas({
           table: target.table,
           column: target.column,
           type: target.type,
+          nullable: target.nullable,
           primary_key: target.primary_key,
         },
-        [{ table: source.table, column: source.column, type: source.type }],
+        [{ table: source.table, column: source.column, type: source.type, nullable: source.nullable }],
         { kind: "direct" },
       );
+    } catch {
+      // addEdge already toasted the error.
     } finally {
       setCreating(false);
     }
@@ -191,12 +208,15 @@ export default function Canvas({
   // mapper_tasks #1: connect N staged sources to a clicked target column.
   // Used by the "Connect N → target" affordance and by clicking a target
   // while sources are staged. Computes a sane default transformation:
-  // 1 source → direct, 2+ sources → concat.
+  // 1 source → direct, 2+ sources → a space-joined concat (a reasonable
+  // default for the common "merge two name-ish columns" case; the user can
+  // still open the transform editor on the created edge to adjust it —
+  // which this auto-selects so that affordance isn't left undiscoverable).
   const connectStagedSources = async (target: ColumnNode) => {
     if (!canEdit || creating) return;
     if (selectedSourceIds.length === 0) return;
     const sources = selectedSourceIds
-      .map((id) => sourceColumns.find((c) => c.id === id))
+      .map((id) => sourceColumnsById.get(id))
       .filter((c): c is ColumnNode => Boolean(c));
     if (sources.length === 0) return;
     setCreating(true);
@@ -207,23 +227,32 @@ export default function Canvas({
           ? { kind: "direct" }
           : {
               kind: "concat",
-              parts: sources.map(() => ({ kind: "source" })),
+              parts: sources.flatMap((_, i) =>
+                i === 0
+                  ? [{ kind: "source" as const }]
+                  : [{ kind: "literal" as const, value: " " }, { kind: "source" as const }],
+              ),
             };
-      await onCreateEdge(
+      const edge = await onCreateEdge(
         {
           table: target.table,
           column: target.column,
           type: target.type,
+          nullable: target.nullable,
           primary_key: target.primary_key,
         },
         sources.map((s) => ({
           table: s.table,
           column: s.column,
           type: s.type,
+          nullable: s.nullable,
         })),
         transformation,
       );
       setSelectedSourceIds([]);
+      if (edge && sources.length > 1) onSelectEdge(edge.id);
+    } catch {
+      // addEdge already toasted the error.
     } finally {
       setCreating(false);
     }
@@ -235,6 +264,14 @@ export default function Canvas({
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
     );
   };
+
+  // O(1) row-level "is this staged" checks instead of Array.includes,
+  // matching the sourceMappedKeys Set pattern used for the analogous
+  // "is this mapped" check.
+  const selectedSourceIdSet = useMemo(
+    () => new Set(selectedSourceIds),
+    [selectedSourceIds],
+  );
 
   return (
     <div
@@ -259,7 +296,7 @@ export default function Canvas({
             side="source"
             mappedKeys={sourceMappedKeys}
             draggingId={draggingSourceId}
-            selectedIds={selectedSourceIds}
+            selectedIds={selectedSourceIdSet}
             onDragStart={canEdit ? setDraggingSourceId : undefined}
             onDragEnd={() => setDraggingSourceId(null)}
             onToggleSelect={canEdit ? toggleSourceSelection : undefined}
@@ -351,7 +388,7 @@ function SchemaPanel({
   mappedKeys: Set<string>;
   draggingId: string | null;
   hoverId?: string | null;
-  selectedIds?: string[];
+  selectedIds?: Set<string>;
   onDragStart?: (id: string) => void;
   onDragEnd?: () => void;
   onDropHover?: (id: string | null) => void;
@@ -361,6 +398,14 @@ function SchemaPanel({
   stagedCount?: number;
 }) {
   const accent = side === "source" ? "text-blue-400" : "text-indigo-400";
+  // Tracks whether a native HTML5 drag just completed, so the onClick that
+  // some browsers fire right after dragend doesn't get treated as a fresh
+  // toggle. Previously checked `window.getSelection()?.toString()`, but
+  // that reflects browser text-selection state, not drag state — native
+  // draggable drags never populate it, so the check never caught a real
+  // post-drag click, and it could false-positive on unrelated text
+  // selected elsewhere on the page.
+  const justDraggedRef = useRef(false);
   // mapper_tasks #1: when sources are staged and the user clicks a target
   // column, convert that click into a multi-source edge create instead of
   // a no-op. The cursor changes to a crosshair to signal this.
@@ -371,9 +416,9 @@ function SchemaPanel({
       <div className={classNames("text-xs font-semibold mb-2 flex items-center gap-2", accent)}>
         <span>📥 {title}</span>
         {connId && <span className="text-zinc-500 font-normal">#{connId}</span>}
-        {side === "source" && (selectedIds?.length ?? 0) > 0 && (
+        {side === "source" && (selectedIds?.size ?? 0) > 0 && (
           <span className="ml-auto px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-violet-500/15 text-violet-300 border border-violet-500/30">
-            {selectedIds!.length} selected
+            {selectedIds!.size} selected
           </span>
         )}
         {side === "target" && (stagedCount ?? 0) > 0 && (
@@ -392,7 +437,7 @@ function SchemaPanel({
             const isMapped = mappedKeys.has(`${n.table}.${n.column}`);
             const isDragging = draggingId === n.id;
             const isHover = hoverId === n.id;
-            const isSelected = selectedIds?.includes(n.id) ?? false;
+            const isSelected = selectedIds?.has(n.id) ?? false;
             return (
               <div
                 key={n.id}
@@ -400,10 +445,17 @@ function SchemaPanel({
                 onDragStart={(e) => {
                   if (onDragStart) {
                     e.dataTransfer.effectAllowed = "link";
+                    justDraggedRef.current = true;
                     onDragStart(n.id);
                   }
                 }}
-                onDragEnd={() => onDragEnd?.()}
+                onDragEnd={() => {
+                  onDragEnd?.();
+                  // Defer clearing past the click that may follow dragend.
+                  setTimeout(() => {
+                    justDraggedRef.current = false;
+                  }, 0);
+                }}
                 onDragOver={(e) => {
                   if (onDrop && side === "target") {
                     e.preventDefault();
@@ -419,11 +471,11 @@ function SchemaPanel({
                     onDrop(n);
                   }
                 }}
-                onClick={(e) => {
+                onClick={() => {
                   // Source: toggle into the multi-source staging set.
                   if (side === "source" && onToggleSelect) {
                     // Avoid hijacking a click that just finished a drag.
-                    if (window.getSelection()?.toString()) return;
+                    if (justDraggedRef.current) return;
                     onToggleSelect(n.id);
                   }
                   // Target: if sources are staged, a click creates the

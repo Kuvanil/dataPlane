@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
@@ -9,7 +9,27 @@ export default function LoginPage() {
   const [password, setPassword] = useState("admin123");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [sessionExpiredPending, setSessionExpiredPending] = useState<number | null>(null);
   const router = useRouter();
+
+  // mapper_tasks #5 completeness fix: this flag is set by useMapping's 401
+  // handler when the session expired with unsaved edits queued. The toast
+  // shown at that moment can be lost if the page unloads before it paints;
+  // this banner is the durable signal that survives the redirect. Read
+  // once on mount and clear immediately so it doesn't reappear on a later
+  // visit to /login.
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("dp_session_expired_with_pending");
+      if (raw) {
+        const count = Number(raw);
+        if (Number.isFinite(count) && count > 0) setSessionExpiredPending(count);
+        localStorage.removeItem("dp_session_expired_with_pending");
+      }
+    } catch {
+      // localStorage may be unavailable (private mode etc.) — no banner.
+    }
+  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -47,6 +67,13 @@ export default function LoginPage() {
           dataPlane
         </Link>
         <p className="text-xs text-zinc-500 mb-8">Welcome back. Enter your credentials to continue.</p>
+
+        {sessionExpiredPending !== null && (
+          <div className="w-full p-3 mb-4 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs flex items-center gap-2">
+            ⚠️ Your session expired with {sessionExpiredPending} unsaved change
+            {sessionExpiredPending === 1 ? "" : "s"}. Log back in and re-apply it.
+          </div>
+        )}
 
         {error && (
           <div className="w-full p-3 mb-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-500 text-xs flex items-center gap-2">

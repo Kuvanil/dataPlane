@@ -11,6 +11,14 @@ interface MappingListProps {
   onSelect: (id: number) => void;
   onCreate: (input: { name: string; source_id: number; target_id: number }) => Promise<Mapping>;
   role: Role | null;
+  // Primitive id/name pair (not the full Mapping object) so this effect
+  // only fires when the open mapping's name actually changes, not on
+  // every render. Patches the sidebar's own cached copy in place instead
+  // of a full re-fetch — the header's inline-rename (mapper_tasks #6)
+  // previously updated only the workspace header's local state, leaving
+  // this list showing the stale name until a manual reload.
+  renamedMappingId?: number | null;
+  renamedMappingName?: string | null;
 }
 
 export default function MappingList({
@@ -18,6 +26,8 @@ export default function MappingList({
   onSelect,
   onCreate,
   role,
+  renamedMappingId,
+  renamedMappingName,
 }: MappingListProps) {
   const [mappings, setMappings] = useState<Mapping[]>([]);
   const [total, setTotal] = useState(0);
@@ -77,6 +87,15 @@ export default function MappingList({
   useEffect(() => {
     void fetchMappings();
   }, []);
+
+  useEffect(() => {
+    if (renamedMappingId == null || renamedMappingName == null) return;
+    setMappings((prev) =>
+      prev.map((m) =>
+        m.id === renamedMappingId ? { ...m, name: renamedMappingName } : m,
+      ),
+    );
+  }, [renamedMappingId, renamedMappingName]);
 
   return (
     <aside

@@ -151,14 +151,18 @@ export function useMapping(): UseMappingResult {
     };
     window.addEventListener("beforeunload", onBeforeUnload);
 
-    // 401: best-effort flush + warning before api.ts clears the token
-    // and navigates to /login. The flush will fail (the token is already
-    // expired), but the user is told their last edit didn't save — the
-    // silent-redirect was the TRD NFR violation mapper_tasks #5 fixed.
+    // 401: best-effort warning before api.ts clears the token and navigates
+    // to /login. We deliberately do NOT attempt a flush here — the token is
+    // already expired, so a PUT would just 401 again. The toast is a
+    // secondary signal only: handle401's hard navigation can unload the
+    // page before this React state update ever paints, so the durable
+    // signal is the localStorage flag, which the login page reads and
+    // displays as a banner (frontend/src/app/login/page.tsx) — that's what
+    // actually survives the redirect and closes the silent-loss NFR gap
+    // mapper_tasks #5 targeted.
     const onUnauthorized = () => {
       const pending = dirtyQueueRef.current.length;
       if (pending > 0) {
-        // Persist a flag the login page can read to surface a warning.
         try {
           localStorage.setItem(
             "dp_session_expired_with_pending",
@@ -185,13 +189,19 @@ export function useMapping(): UseMappingResult {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Drain the queue one op at a time, removing each only after it succeeds.
+  // A failure partway through leaves the failing op (and anything queued
+  // after it) in dirtyQueueRef so the next flush retries them and the
+  // beforeunload/401 "unsaved changes" warnings keep seeing a truthful
+  // pending count — splicing the whole queue out up front (the prior
+  // behavior) discarded failed ops silently, defeating those warnings.
   const flushDirty = useCallback(async () => {
     if (saving || dirtyQueueRef.current.length === 0) return;
-    const queue = dirtyQueueRef.current.splice(0);
     setSaving(true);
     try {
-      for (const op of queue) {
-        await op();
+      while (dirtyQueueRef.current.length > 0) {
+        await dirtyQueueRef.current[0]();
+        dirtyQueueRef.current.shift();
       }
       setLastSavedAt(new Date().toISOString());
       setDirty(false);
@@ -324,7 +334,11 @@ export function useMapping(): UseMappingResult {
         await api.delete(`/api/v1/mappings/${mapping.id}/edges/${edgeId}`);
         setLastSavedAt(new Date().toISOString());
       } catch (err) {
-        setMapping({ ...mapping, edges: snapshot });
+        // Functional update: roll back only the `edges` field onto whatever
+        // mapping state is current, rather than the closure's `mapping`
+        // snapshot, which would clobber any change (e.g. a concurrent
+        // rename) that landed while this delete was in flight.
+        setMapping((prev) => (prev ? { ...prev, edges: snapshot } : prev));
         const message =
           err instanceof ApiError ? err.message : "Failed to remove edge.";
         showToast("error", message);
@@ -345,13 +359,16 @@ export function useMapping(): UseMappingResult {
       const trimmed = name.trim();
       if (!trimmed || trimmed === mapping.name) return;
       const snapshot = mapping.name;
-      setMapping({ ...mapping, name: trimmed });
+      setMapping((prev) => (prev ? { ...prev, name: trimmed } : prev));
       try {
         await api.put<Mapping>(`/api/v1/mappings/${mapping.id}`, { name: trimmed });
         setLastSavedAt(new Date().toISOString());
         showToast("success", "Mapping renamed.");
       } catch (err) {
-        setMapping({ ...mapping, name: snapshot });
+        // Functional update, same reasoning as removeEdge above: an
+        // in-flight addEdge/removeEdge that resolves while this PUT is
+        // pending must not be silently discarded by the rollback.
+        setMapping((prev) => (prev ? { ...prev, name: snapshot } : prev));
         const message =
           err instanceof ApiError ? err.message : "Failed to rename mapping.";
         showToast("error", message);

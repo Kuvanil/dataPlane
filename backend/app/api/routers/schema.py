@@ -10,6 +10,14 @@ from app.services.audit_helper import record_audit
 
 router = APIRouter()
 
+
+def _get_connection_or_404(id: int, db: Session) -> DBConnection:
+    """Load a DBConnection by id or raise 404."""
+    conn = db.query(DBConnection).filter(DBConnection.id == id).first()
+    if not conn:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    return conn
+
 @router.get("/diff")
 def compare_schemas(source_id: int, target_id: int, db: Session = Depends(get_db)):
     """
@@ -62,11 +70,18 @@ def classify_schema(id: int, db: Session = Depends(get_db)):
 
 @router.get("/{id}/drift-history")
 def get_drift_history(id: int, db: Session = Depends(get_db)):
-    """Return the last 5 schema snapshots for a connection."""
+    """Return the last 5 schema snapshots with column-level drift events.
+
+    Each snapshot now includes an optional ``drift_event`` key (``null`` if
+    no drift was detected for that snapshot) with ``tables_added``,
+    ``tables_removed``, ``columns_added``, ``columns_removed``, and
+    ``type_changes`` — answering AC3's "what changed" without the caller
+    re-diffing raw JSON blobs.
+    """
     from app.models.schema_snapshot import SchemaSnapshot
-    db_conn = db.query(DBConnection).filter(DBConnection.id == id).first()
-    if not db_conn:
-        raise HTTPException(status_code=404, detail="Connection not found")
+    from app.models.drift_event import DriftEvent
+
+    db_conn = _get_connection_or_404(id, db)
     snapshots = (
         db.query(SchemaSnapshot)
         .filter(SchemaSnapshot.connection_id == id)
@@ -74,6 +89,16 @@ def get_drift_history(id: int, db: Session = Depends(get_db)):
         .limit(5)
         .all()
     )
+    snapshot_ids = [s.id for s in snapshots]
+
+    # Bulk-load DriftEvents for all returned snapshots
+    drift_events = {
+        e.snapshot_id: e
+        for e in db.query(DriftEvent)
+        .filter(DriftEvent.snapshot_id.in_(snapshot_ids))
+        .all()
+    } if snapshot_ids else {}
+
     return {
         "connection": db_conn.name,
         "snapshots": [
@@ -82,10 +107,40 @@ def get_drift_history(id: int, db: Session = Depends(get_db)):
                 "schema_hash": s.schema_hash,
                 "captured_at": s.captured_at,
                 "table_count": len(s.schema_json) if s.schema_json else 0,
+                "drift_event": (
+                    {
+                        "id": de.id,
+                        "tables_added": de.tables_added,
+                        "tables_removed": de.tables_removed,
+                        "columns_added": de.columns_added,
+                        "columns_removed": de.columns_removed,
+                        "type_changes": de.type_changes,
+                        "detected_at": de.detected_at,
+                    }
+                    if (de := drift_events.get(s.id))
+                    else None
+                ),
             }
             for s in snapshots
         ],
     }
+
+
+@router.post("/{id}/rescan")
+def rescan_connection(id: int, db: Session = Depends(get_db)):
+    """On-demand schema drift re-scan for a single connection (FR6/AC3).
+
+    Calls the same ``_check_single_connection_drift`` helper that the
+    periodic Celery task uses for all connections, so the behaviour is
+    identical.  Returns the drift result including the full diff, with
+    column-level details, if drift was detected.
+    """
+    from app.tasks.ai_tasks import _check_single_connection_drift
+
+    conn = _get_connection_or_404(id, db)
+    result = _check_single_connection_drift(db, conn, actor="manual-rescan")
+    db.commit()
+    return result
 
 
 @router.get("/graph")
