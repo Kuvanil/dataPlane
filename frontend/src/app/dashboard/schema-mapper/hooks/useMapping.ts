@@ -72,6 +72,7 @@ export interface UseMappingResult {
     origin?: FieldMapping["origin"];
   }): Promise<FieldMapping | null>;
   removeEdge(edgeId: number): Promise<void>;
+  rename(name: string): Promise<void>;
   updateTransformation(edgeId: number, transformation: TransformationPayload): Promise<void>;
   selectEdge(edgeId: number | null): void;
   requestSuggestions(): Promise<void>;
@@ -289,6 +290,33 @@ export function useMapping(): UseMappingResult {
       }
     },
     [mapping, selectedEdgeId, showToast],
+  );
+
+  // Rename the mapping (TRD FR8 implied; mapper_tasks #6). Mirrors the
+  // removeEdge pattern: snapshot the current name, optimistically update
+  // local state, PUT to the server, roll back + toast on failure.
+  // Skipped from the autosave queue — a rename is a deliberate single
+  // action, not a stream of small autosaved edits.
+  const rename: UseMappingResult["rename"] = useCallback(
+    async (name: string) => {
+      if (!mapping) return;
+      const trimmed = name.trim();
+      if (!trimmed || trimmed === mapping.name) return;
+      const snapshot = mapping.name;
+      setMapping({ ...mapping, name: trimmed });
+      try {
+        await api.put<Mapping>(`/api/v1/mappings/${mapping.id}`, { name: trimmed });
+        setLastSavedAt(new Date().toISOString());
+        showToast("success", "Mapping renamed.");
+      } catch (err) {
+        setMapping({ ...mapping, name: snapshot });
+        const message =
+          err instanceof ApiError ? err.message : "Failed to rename mapping.";
+        showToast("error", message);
+        throw err;
+      }
+    },
+    [mapping, showToast],
   );
 
   const updateTransformation = useCallback(
@@ -509,6 +537,7 @@ export function useMapping(): UseMappingResult {
     refresh,
     addEdge,
     removeEdge,
+    rename,
     updateTransformation,
     selectEdge,
     requestSuggestions,

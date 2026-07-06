@@ -143,6 +143,7 @@ export default function SchemaMapperPage() {
               onValidate={handleValidate}
               onPublish={handlePublishClick}
               onExport={handleExportClick}
+              onRename={(name) => m.rename(name)}
               validating={validating}
               publishing={publishing}
             />
