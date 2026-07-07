@@ -156,7 +156,9 @@ class AISuggestion(Base):
     source_type = Column(String, nullable=True)
     confidence = Column(Float, nullable=False, default=0.0)
     reason = Column(Text, nullable=True)
-    status = Column(String, nullable=False, default="pending")  # pending | accepted | rejected
+    # pending | accepted | rejected | superseded (pending at publish time —
+    # the draft became immutable, so the question can never be answered)
+    status = Column(String, nullable=False, default="pending")
     accepted_edge_id = Column(Integer, ForeignKey("field_mappings.id", ondelete="SET NULL"),
                               nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

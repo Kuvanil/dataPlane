@@ -179,15 +179,21 @@ export default function SchemaMapperPage() {
                     onJumpToEdge={handleJumpToEdge}
                   />
                 )}
-                <SuggestionPanel
-                  pending={m.pendingSuggestions}
-                  decided={m.decidedSuggestions}
-                  loading={false}
-                  role={m.role}
-                  onRequest={m.requestSuggestions}
-                  onAccept={(id) => m.acceptSuggestion(id)}
-                  onReject={(id) => m.rejectSuggestion(id)}
-                />
+                {/* Suggestions are a draft-only workflow: publish supersedes
+                    every pending suggestion server-side, and a published
+                    mapping is immutable — so no suggestion UI (historical
+                    or otherwise) is shown once a mapping is published. */}
+                {mapping.status === "draft" && (
+                  <SuggestionPanel
+                    pending={m.pendingSuggestions}
+                    decided={m.decidedSuggestions}
+                    loading={false}
+                    role={m.role}
+                    onRequest={m.requestSuggestions}
+                    onAccept={(id) => m.acceptSuggestion(id)}
+                    onReject={(id) => m.rejectSuggestion(id)}
+                  />
+                )}
               </div>
               <EdgeInspector
                 edge={selectedEdge}

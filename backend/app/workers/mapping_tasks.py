@@ -37,7 +37,7 @@ def suggest_mappings_task(self, mapping_id: int) -> Dict[str, Any]:
 
     Algorithm:
       For each target table T:
-        U = unmapped target columns in T
+        U = unmapped target columns in T without a pending suggestion
         if U is empty: skip
         best_by_col = {}
         For each source table S:
@@ -79,12 +79,32 @@ def suggest_mappings_task(self, mapping_id: int) -> Dict[str, Any]:
             if e.version_id is None
         }
 
+        # Prior suggestions constrain what a re-run may propose: a pending
+        # suggestion is an open question the user hasn't answered yet —
+        # re-running must not duplicate it — and a rejected (source→target)
+        # pair is a decision already made — never offer the same match
+        # again (a *different* source for that target is still fair game).
+        prior = (
+            db.query(AISuggestion)
+            .filter(AISuggestion.mapping_id == m.id)
+            .all()
+        )
+        pending_targets = {
+            (s.target_table, s.target_column)
+            for s in prior if s.status == "pending"
+        }
+        rejected_pairs = {
+            (s.source_table, s.source_column, s.target_table, s.target_column)
+            for s in prior if s.status == "rejected"
+        }
+
         suggestions_created = 0
         for tgt_table, tgt_cols in target_schema.items():
             # Collect the unmapped target columns for this table.
             unmapped_cols = [
                 c for c in tgt_cols
                 if (tgt_table, c.get("name")) not in existing_targets
+                and (tgt_table, c.get("name")) not in pending_targets
             ]
             if not unmapped_cols:
                 continue
@@ -108,6 +128,13 @@ def suggest_mappings_task(self, mapping_id: int) -> Dict[str, Any]:
                 for match in result.get("matches", []) or []:
                     tgt_name = match.get("target")
                     if tgt_name not in {c.get("name") for c in unmapped_cols}:
+                        continue
+                    # Filter rejected pairs *before* best-match selection so
+                    # the next-best non-rejected source can still win the slot.
+                    if (
+                        src_table, match.get("source"),
+                        tgt_table, tgt_name,
+                    ) in rejected_pairs:
                         continue
                     conf = float(match.get("confidence", 0) or 0)
                     existing_best = best_by_col.get(tgt_name)

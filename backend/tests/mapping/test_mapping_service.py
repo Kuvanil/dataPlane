@@ -910,3 +910,106 @@ def test_check_no_many_to_many_is_independent_helper(db, admin, seeded_connectio
         target={"table": "t1", "column": "c1"},
         sources=[{"table": "s1", "column": "c1"}],
     )
+
+
+# ── Suggestion lifecycle at publish time ─────────────────────────────────
+
+
+def test_publish_supersedes_pending_suggestions(
+    db, admin, seeded_connections, monkeypatch,
+):
+    """Publish is terminal for the draft, so pending suggestions can never
+    be accepted afterwards (only draft mappings are mutable). Publish must
+    close them out as 'superseded' instead of leaving un-actionable
+    'pending' rows behind, and must leave already-decided rows untouched.
+    """
+    from app.models.mapping import AISuggestion
+    monkeypatch.setattr(
+        schema_service.SchemaService, "get_full_schema",
+        staticmethod(_fake_schema),
+    )
+    src, tgt = seeded_connections
+    m = MappingService.create_mapping(
+        db, source_id=src.id, target_id=tgt.id,
+        name="M", actor=admin.email,
+    )
+    MappingService.add_edge(
+        db, m.id,
+        target={"table": "t1", "column": "c1", "type": "TEXT", "nullable": False},
+        sources=[{"table": "s1", "column": "c1", "type": "TEXT", "nullable": False}],
+        transformation={"kind": "direct"},
+        actor=admin.email,
+    )
+    pending = AISuggestion(
+        mapping_id=m.id,
+        target_table="t1", target_column="c2", target_type="TEXT",
+        source_table="s1", source_column="c2", source_type="TEXT",
+        confidence=88.0, reason="test", status="pending",
+    )
+    rejected = AISuggestion(
+        mapping_id=m.id,
+        target_table="t1", target_column="c3", target_type="TEXT",
+        source_table="s1", source_column="c3", source_type="TEXT",
+        confidence=70.0, reason="test", status="rejected",
+    )
+    db.add_all([pending, rejected])
+    db.commit()
+
+    MappingService.publish(db, m.id, actor=admin.email)
+
+    db.refresh(pending)
+    db.refresh(rejected)
+    assert pending.status == "superseded"
+    assert pending.decided_by == admin.email
+    assert pending.decided_at is not None
+    assert rejected.status == "rejected"  # decided rows untouched
+
+    audit = (
+        db.query(AuditLog)
+        .filter(AuditLog.event_type == "mapping_published")
+        .first()
+    )
+    assert audit.payload["suggestions_superseded"] == 1
+
+
+def test_superseded_suggestion_cannot_be_accepted_or_rejected(
+    db, admin, seeded_connections, monkeypatch,
+):
+    from app.models.mapping import AISuggestion
+    monkeypatch.setattr(
+        schema_service.SchemaService, "get_full_schema",
+        staticmethod(_fake_schema),
+    )
+    src, tgt = seeded_connections
+    m = MappingService.create_mapping(
+        db, source_id=src.id, target_id=tgt.id,
+        name="M", actor=admin.email,
+    )
+    MappingService.add_edge(
+        db, m.id,
+        target={"table": "t1", "column": "c1", "type": "TEXT", "nullable": False},
+        sources=[{"table": "s1", "column": "c1", "type": "TEXT", "nullable": False}],
+        transformation={"kind": "direct"},
+        actor=admin.email,
+    )
+    sug = AISuggestion(
+        mapping_id=m.id,
+        target_table="t1", target_column="c2", target_type="TEXT",
+        source_table="s1", source_column="c2", source_type="TEXT",
+        confidence=88.0, reason="test", status="pending",
+    )
+    db.add(sug)
+    db.commit()
+    MappingService.publish(db, m.id, actor=admin.email)
+
+    # Accept hits the draft guard first (mapping is published) — 409.
+    with pytest.raises(HTTPException) as e:
+        MappingService.accept_suggestion(
+            db, m.id, sug.id, {"kind": "direct"}, actor=admin.email,
+        )
+    assert e.value.status_code == 409
+    # Reject has no draft guard but the suggestion is no longer pending — 409.
+    with pytest.raises(HTTPException) as e:
+        MappingService.reject_suggestion(db, m.id, sug.id, actor=admin.email)
+    assert e.value.status_code == 409
+    assert "superseded" in str(e.value.detail)

@@ -481,6 +481,26 @@ class MappingService:
                 e.version_id = version.id
             m.status = "published"
             m.current_version_id = version.id
+
+            # Publish is a terminal decision on the draft: a suggestion
+            # still pending can never be acted on afterwards (only draft
+            # mappings are mutable), so close them out here instead of
+            # leaving permanently un-actionable "pending" rows behind.
+            suggestions_superseded = (
+                db.query(AISuggestion)
+                .filter(
+                    AISuggestion.mapping_id == m.id,
+                    AISuggestion.status == "pending",
+                )
+                .update(
+                    {
+                        "status": "superseded",
+                        "decided_at": datetime.now(timezone.utc),
+                        "decided_by": actor,
+                    },
+                    synchronize_session=False,
+                )
+            )
             db.flush()
             record_audit(
                 db, "mapping_published", actor=actor,
@@ -490,6 +510,7 @@ class MappingService:
                     "version_number": next_n,
                     "version_id": version.id,
                     "edges_count": len(edges_snapshot),
+                    "suggestions_superseded": suggestions_superseded,
                 },
             )
             db.commit()
