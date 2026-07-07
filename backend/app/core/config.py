@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     # Dashboard aggregation cache (dashboard_tasks #2). TTL <= 0 disables caching.
     DASHBOARD_CACHE_TTL: int = 30
     DASHBOARD_CACHE_MAXSIZE: int = 256
+    # Connectors (connector_tasks #4/#5): hard cap on test-connection time
+    # (TRD perf NFR: ≤5s or clear timeout) and health-check cadence/throttle.
+    CONNECTOR_TEST_TIMEOUT_SECONDS: int = 5
+    HEALTH_CHECK_INTERVAL_MINUTES: int = 5
+    HEALTH_CHECK_RATE_LIMIT: str = "10/m"
 
     class Config:
         env_file = ".env"

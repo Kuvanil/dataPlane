@@ -37,7 +37,10 @@ class MappingService:
     def create_mapping(db: Session, *, source_id: int, target_id: int,
                        name: str, actor: str) -> Mapping:
         for cid, label in ((source_id, "source"), (target_id, "target")):
-            if not db.query(DBConnection).filter(DBConnection.id == cid).first():
+            if not db.query(DBConnection).filter(
+                DBConnection.id == cid,
+                DBConnection.is_deleted == False,  # noqa: E712
+            ).first():
                 raise HTTPException(
                     status_code=404, detail=f"{label} connection {cid} not found",
                 )

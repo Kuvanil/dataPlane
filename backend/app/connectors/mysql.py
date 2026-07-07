@@ -1,7 +1,8 @@
+import time
 import pymysql
 from pymysql.cursors import DictCursor
 from typing import List, Dict, Any
-from .base import BaseConnector
+from .base import BaseConnector, TestConnectionResult, classify_connection_error
 
 
 class MySQLConnector(BaseConnector):
@@ -21,17 +22,27 @@ class MySQLConnector(BaseConnector):
 
     def connect(self):
         if not self.conn:
-            self.conn = pymysql.connect(**self.config, cursorclass=DictCursor)
+            # Driver-level timeout slightly under the 5s API timeout so the
+            # driver's own error message wins over a generic future-timeout.
+            self.conn = pymysql.connect(**self.config, cursorclass=DictCursor,
+                                        connect_timeout=4)
         return self.conn
 
-    def test_connection(self) -> bool:
+    def test_connection(self) -> TestConnectionResult:
         try:
+            start = time.monotonic()
             conn = self.connect()
             cursor = conn.cursor()
-            cursor.execute("SELECT 1 AS ok")
-            return cursor.fetchone()["ok"] == 1
-        except Exception:
-            return False
+            cursor.execute("SELECT VERSION() AS v")
+            version = cursor.fetchone()["v"]
+            latency = int((time.monotonic() - start) * 1000)
+            return TestConnectionResult(
+                success=True,
+                version=f"MySQL {version}" if version else None,
+                latency_ms=latency,
+            )
+        except Exception as e:
+            return classify_connection_error(str(e))
 
     def get_tables(self) -> List[str]:
         conn = self.connect()

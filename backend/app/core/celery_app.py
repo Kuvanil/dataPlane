@@ -17,6 +17,7 @@ celery_app = Celery(
     #   Suggestions" a silent no-op in production).
     include=[
         "app.tasks.ai_tasks",
+        "app.tasks.connector_tasks",
         "app.workers.mapping_tasks",
     ],
 )
@@ -30,6 +31,10 @@ celery_app.conf.update(
         "check-schema-drift": {
             "task": "app.tasks.ai_tasks.check_schema_drift_task",
             "schedule": crontab(minute=f"*/{settings.SCHEMA_DRIFT_INTERVAL_MINUTES}"),
+        },
+        "health-check-all-connections": {
+            "task": "app.tasks.connector_tasks.run_all_health_checks",
+            "schedule": crontab(minute=f"*/{settings.HEALTH_CHECK_INTERVAL_MINUTES}"),
         },
     },
     timezone="UTC",

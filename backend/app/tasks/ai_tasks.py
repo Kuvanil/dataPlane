@@ -422,7 +422,11 @@ def check_schema_drift_task(self) -> Dict[str, Any]:
     db = SessionLocal()
     results = []
     try:
-        connections = db.query(DBConnection).all()
+        connections = (
+            db.query(DBConnection)
+            .filter(DBConnection.is_deleted == False)  # noqa: E712
+            .all()
+        )
         for conn in connections:
             r = _check_single_connection_drift(db, conn)
             results.append(r)

@@ -6,8 +6,9 @@ Falls back to SQLite simulation with Oracle-style naming for demo environments
 where no Oracle DB is present.
 """
 
+import time
 from typing import List, Dict, Any
-from .base import BaseConnector
+from .base import BaseConnector, TestConnectionResult, classify_connection_error
 
 
 class OracleConnector(BaseConnector):
@@ -36,7 +37,9 @@ class OracleConnector(BaseConnector):
             import sqlite3, os
             os.makedirs("/shared/data", exist_ok=True)
             db_path = f"/shared/data/dataplane_oracle_sim_{self.service_name}.db"
-            self.conn = sqlite3.connect(db_path)
+            # check_same_thread=False: test_connection runs inside a timeout
+            # worker thread while close() happens on the request thread.
+            self.conn = sqlite3.connect(db_path, check_same_thread=False)
             self.conn.row_factory = sqlite3.Row
             return self.conn
 
@@ -48,14 +51,24 @@ class OracleConnector(BaseConnector):
         except Exception as exc:
             raise ConnectionError(f"Oracle connection failed: {exc}")
 
-    def test_connection(self) -> bool:
+    def test_connection(self) -> TestConnectionResult:
         try:
+            start = time.monotonic()
             conn = self.connect()
             cur = conn.cursor()
-            cur.execute("SELECT 1" + (" FROM DUAL" if not self._sim_mode else ""))
-            return cur.fetchone()[0] == 1
-        except Exception:
-            return False
+            if self._sim_mode:
+                cur.execute("SELECT sqlite_version()")
+                version = f"Oracle (simulated, SQLite {cur.fetchone()[0]})"
+            else:
+                cur.execute("SELECT banner FROM v$version WHERE ROWNUM = 1")
+                row = cur.fetchone()
+                version = row[0] if row else None
+            latency = int((time.monotonic() - start) * 1000)
+            return TestConnectionResult(
+                success=True, version=version, latency_ms=latency,
+            )
+        except Exception as e:
+            return classify_connection_error(str(e))
 
     # ── Schema Introspection ────────────────────────────────────
 

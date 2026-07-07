@@ -81,7 +81,11 @@ def clear_session(session_id: str, db: Session = Depends(get_db)):
 
 def _build_full_context(db: Session) -> Dict[str, Any]:
     """Build comprehensive context from all connected databases."""
-    connections = db.query(DBConnection).all()
+    connections = (
+        db.query(DBConnection)
+        .filter(DBConnection.is_deleted == False)  # noqa: E712
+        .all()
+    )
 
     schemas: Dict[str, Any] = {}
     classifications: Dict[str, Any] = {}

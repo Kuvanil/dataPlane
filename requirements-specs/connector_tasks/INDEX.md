@@ -22,19 +22,19 @@
 >
 > **FR1–FR9 verdict (as of 2026-07-06 audit):**
 
-| FR | Requirement | Verdict | Task(s) |
+| FR | Requirement | Verdict (updated 2026-07-07, landed+tested code only) | Task(s) |
 |----|-------------|---------|---------|
-| FR1 | List available connector types with metadata | NOT DONE (no types endpoint) | #3 |
-| FR2 | Create connection by selecting type + parameters | PARTIAL (create endpoint exists, no dynamic form metadata, no secret manager) | #1, #2 |
-| FR3 | Credentials in secret manager, never returned to client | NOT DONE (stored in plaintext JSON config) | #2 |
-| FR4 | Test Connection with pass/fail + diagnostic detail | PARTIAL (pass/fail only, no diagnostics) | #4 |
-| FR5 | Live health status for each saved connection | NOT DONE | #5 |
-| FR6 | Edit non-secret fields + rotate credentials | NOT DONE (no update endpoint exists) | #8 |
-| FR7 | Soft-delete with dependency flagging | NOT DONE (hard delete, no dependency checks) | #7 |
-| FR8 | Trigger schema discovery handoff on demand | PARTIAL (schema GET exists, no explicit discover endpoint + Schema Intel handoff) | #6 |
-| FR9 | Audit events for create/edit/delete/test/rotate | PARTIAL (create/delete/test only) | #7, #8 |
+| FR1 | List available connector types with metadata | **DONE** — `GET /connectors/types` + `/types/{type}` from `connector_catalog.py` registry | #3 |
+| FR2 | Create connection by selecting type + parameters | **DONE** — create validates config against the type's `FieldDef`s (required/number/select, unknown keys stripped) | #1, #3 |
+| FR3 | Credentials in secret manager, never returned to client | **PARTIAL** — the "never returned" half is done (all responses redact secret fields via `redact_config`, incl. URL-embedded creds; all read endpoints now auth-gated — they were previously open and leaked plaintext passwords). The "stored in vault" half remains blocked on #2's sign-off; config still holds secrets at rest | #2 |
+| FR4 | Test Connection with pass/fail + diagnostic detail | **DONE** — structured diagnostics (reachable/auth/db/version/latency), error classification, 5s hard timeout (`CONNECTOR_TEST_TIMEOUT_SECONDS`) | #4 |
+| FR5 | Live health status for each saved connection | **DONE** — `health_status`/`last_tested_at`/`last_test_error` columns, beat-scheduled checks every 5 min (rate-limited 10/m), `GET /connectors/health-summary` | #5 |
+| FR6 | Edit non-secret fields + rotate credentials | NOT DONE (blocked chain: #8 depends on #2) | #8 |
+| FR7 | Soft-delete with dependency flagging | **DONE** — two-step confirm flow, dependent pipelines disabled, restore + admin-only hard delete (blocked while dependents exist), partial unique index allows name reuse. Caveat: `Mapping` has no status field to flag, so affected mappings are recorded in the audit payload only | #7 |
+| FR8 | Trigger schema discovery handoff on demand | **DONE** — `POST /connectors/{id}/discover`: SchemaSnapshot + best-effort `SchemaCatalogService.scan_connection` handoff | #6 |
+| FR9 | Audit events for create/edit/delete/test/rotate | **PARTIAL** — create/delete/test/restore/hard-delete/discover all audited with real actor; edit/rotate don't exist yet (#8) | #7, #8 |
 
-**5 of 9 FRs not done, 4 partial.**
+**6 of 9 FRs done; FR3/FR9 partial (blocked on #2's sign-off); FR6 not done (same chain).**
 
 ## Status legend
 - `[ ]` not started
@@ -47,15 +47,15 @@
 
 | # | TRD ref | Status | Title |
 |---|---|---|---|
-| [01](01_connection_data_model.md) | FR2, FR5, FR7, §11 | [~] | Connection data model upgrade — health, soft-delete, secrets (tenant_id gated, see decision box in file) |
-| [02](02_secret_manager_integration.md) | FR3, FR6, Security NFR | [!] | Secret manager integration for credential vaulting — **blocked pending sign-off on encryption approach** |
-| [03](03_connector_catalog_types.md) | FR1 | [ ] | Connector types catalog + dynamic form metadata |
-| [04](04_test_connection_with_diagnostics.md) | FR4, Performance NFR | [ ] | Test Connection with enhanced diagnostics + timeout (touches base.py + all 5 connectors) |
-| [05](05_health_check_scheduler.md) | FR5, Reliability NFR | [ ] | Health check scheduler with status tracking |
-| [06](06_discovery_handoff.md) | FR8 | [ ] | Schema discovery handoff to Schema Intel |
-| [07](07_dependency_aware_soft_delete.md) | FR7, §10 risk table | [ ] | Dependency-aware soft delete with warnings |
-| [08](08_update_and_credential_rotation.md) | FR6, FR9 | [ ] | Update connection + credential rotation + audit |
-| [09](09_connector_tests.md) | §12 DoD | [ ] | Test suite |
+| [01](01_connection_data_model.md) | FR2, FR5, FR7, §11 | [x] | Connection data model upgrade — health, soft-delete, secrets_ref, audit columns + `ConnectionService` (tenant_id left out per decision box, option 1 by default until owner picks) |
+| [02](02_secret_manager_integration.md) | FR3, FR6, Security NFR | [!] | Secret manager integration for credential vaulting — **blocked pending sign-off on encryption approach**. Interim mitigation shipped 2026-07-07: response-layer redaction + auth-gated reads (see FR3 row) |
+| [03](03_connector_catalog_types.md) | FR1 | [x] | Connector types catalog + dynamic form metadata + boundary validation |
+| [04](04_test_connection_with_diagnostics.md) | FR4, Performance NFR | [x] | Test Connection with enhanced diagnostics + timeout (rewrote base.py + all 5 connectors as scoped) |
+| [05](05_health_check_scheduler.md) | FR5, Reliability NFR | [x] | Health check scheduler with status tracking (beat + rate-limited fan-out + health-summary endpoint) |
+| [06](06_discovery_handoff.md) | FR8 | [x] | Schema discovery handoff to Schema Intel |
+| [07](07_dependency_aware_soft_delete.md) | FR7, §10 risk table | [x] | Dependency-aware soft delete with warnings (+ restore, admin hard delete, deleted list) |
+| [08](08_update_and_credential_rotation.md) | FR6, FR9 | [!] | Update connection + credential rotation + audit — blocked on #2 (rotation needs the secret store) |
+| [09](09_connector_tests.md) | §12 DoD | [~] | Test suite — 69 tests landed covering tasks #1/#3/#4/#5/#6/#7 (suite 260/260 green); secret-manager + rotation test modules pending #2/#8 |
 | [10](10_tenant_isolation_signoff.md) | §9 assumption / DoD | [!] | Tenant isolation — cross-reference, not a new task |
 
 ## Confidence per task (auto-mode implementation)
@@ -113,3 +113,51 @@
   and duplicated Task #8's rotation-time backfill) and 2 low-severity consistency nits (timestamp
   column convention, partial-unique-index SQLAlchemy syntax). No code implemented — all changes
   are to the task specs themselves.
+- 2026-07-07 — **Tasks #1, #3, #4, #5, #6, #7 implemented and verified** (69 new tests in
+  `backend/tests/connectors/`, full backend suite 260/260; frontend tsc/build clean, vitest
+  35/35, lint 29 problems vs 30-problem HEAD baseline). What landed:
+  - **#1** `DBConnection` gains `secrets_ref`, `health_status`, `last_tested_at`,
+    `last_test_error`, `is_deleted`, `deleted_at`, `created_by`, `updated_by`, `updated_at`;
+    unique-name constraint replaced by partial unique index `uq_connection_name_active`
+    (`WHERE NOT is_deleted`) so soft-deleted names are reusable. New
+    `services/connection_service.py` owns CRUD/health/dependents; router is thin. `tenant_id`
+    deliberately NOT added (decision box, defaulted to option 1 pending owner call).
+  - **#3** `services/connector_catalog.py` registry (5 types, FieldDefs, secret_fields) +
+    `GET /connectors/types[/{type}]`; create now validates config per type (required fields,
+    number coercion, unknown keys stripped); hardcoded `VALID_TYPES` removed.
+  - **#4** `TestConnectionResult` dataclass + shared `classify_connection_error` in `base.py`;
+    all 5 drivers' `test_connection()` rewritten (version + latency on success); psycopg2/pymysql
+    get `connect_timeout=4`; `SchemaService.test_connection` wraps in a 5s ThreadPoolExecutor
+    timeout and never raises; `POST /{id}/test` returns diagnostics + updates health + audits.
+    SQLite driver no longer silently *creates* a missing DB file during a test (path checked).
+  - **#5** `tasks/connector_tasks.py` (`run_all_health_checks` fan-out + per-connection task,
+    `rate_limit=10/m`, retries w/ backoff) + beat entry every `HEALTH_CHECK_INTERVAL_MINUTES`
+    (default 5) + `GET /connectors/health-summary`.
+  - **#6** `POST /{id}/discover`: SchemaSnapshot (full SHA-256 of normalized schema) + best-effort
+    handoff to `SchemaCatalogService.scan_connection`, both audited; degrades gracefully if the
+    catalog scan fails.
+  - **#7** Soft delete w/ two-step confirm (`?confirm=true`) when dependents exist; dependent
+    pipelines get `enabled=False`; mappings recorded in audit payload only (no status field
+    exists on `Mapping` — honest gap); `POST /{id}/restore` (409 on name reuse),
+    `DELETE /{id}/hard` + `GET /connectors/deleted` admin-only via `require_role("admin")`;
+    hard delete blocked while dependents exist.
+  - **Beyond the task files (hotfix-class, FR3/security NFR):** the audit found `GET /connectors/`
+    and `GET /{id}` returned plaintext passwords to *unauthenticated* callers. All connector
+    endpoints now require auth, and every response serializes through `_to_response()` which
+    redacts secret values (`***`, URL creds masked). Encryption-at-rest remains #2's scope.
+  - **Consumers updated for soft-delete:** drift task, askdata context, dashboard connector KPI,
+    and mapping/pipeline create-validation now filter `is_deleted == False`.
+  - **Frontend (minimal alignment):** connectors page status badge now driven by real
+    `health_status`/test results (was hardcoded "Connected"), test failures show the diagnostic
+    message, and the mock-connector fallback rows were removed per the no-mock-UI rule.
+  - **Live verification:** additive `ALTER TABLE` applied to the dev Postgres (no drop needed),
+    api/worker/beat/frontend images rebuilt; exercised via curl: types, redacted list,
+    401 on anonymous read, test diagnostics (SQLite connected w/ version+latency; Oracle
+    CONNECTION_REFUSED w/ driver message), health-summary, discover (snapshot 271 + catalog scan
+    3 tables/17 columns), dependent-delete warning (`requires_confirm` w/ 2 deps), scratch
+    create→soft-delete→restore→hard-delete, audit rows present for every action. Beat had
+    already populated real health statuses within minutes of restart.
+  - **Caveats:** #2/#8 remain blocked on the encryption-approach sign-off (secrets still
+    plaintext *at rest*); mapping-side flagging is audit-only; the dev-DB migration was manual
+    SQL (this repo has no migration tool — fresh environments get the full schema from
+    `create_all`, existing ones need the same additive ALTERs, recorded here).

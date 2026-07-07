@@ -5,9 +5,10 @@ Uses SQLAlchemy as a universal abstraction to support any database that
 provides a Python DB-API 2.0 driver or SQLAlchemy dialect URL.
 """
 
+import time
 from sqlalchemy import create_engine, inspect, text
 from typing import List, Dict, Any
-from .base import BaseConnector
+from .base import BaseConnector, TestConnectionResult, classify_connection_error
 
 
 class JDBCConnector(BaseConnector):
@@ -31,13 +32,29 @@ class JDBCConnector(BaseConnector):
             self.conn = self.engine.connect()
         return self.conn
 
-    def test_connection(self) -> bool:
+    def test_connection(self) -> TestConnectionResult:
         try:
+            start = time.monotonic()
             conn = self.connect()
             result = conn.execute(text("SELECT 1"))
-            return result.scalar() == 1
-        except Exception:
-            return False
+            ok = result.scalar() == 1
+            latency = int((time.monotonic() - start) * 1000)
+            if not ok:
+                return TestConnectionResult(
+                    success=False, reachable=True,
+                    database_accessible=False,
+                    error_message="SELECT 1 returned an unexpected result",
+                    error_code="UNKNOWN_ERROR",
+                )
+            dialect = self.engine.dialect
+            server_info = getattr(dialect, "server_version_info", None)
+            version = (f"{dialect.name} "
+                       + ".".join(str(p) for p in server_info)) if server_info else dialect.name
+            return TestConnectionResult(
+                success=True, version=version, latency_ms=latency,
+            )
+        except Exception as e:
+            return classify_connection_error(str(e))
 
     def get_tables(self) -> List[str]:
         self.connect()

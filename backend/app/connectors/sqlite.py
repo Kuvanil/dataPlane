@@ -1,6 +1,8 @@
+import os
 import sqlite3
+import time
 from typing import List, Dict, Any
-from .base import BaseConnector
+from .base import BaseConnector, TestConnectionResult, classify_connection_error
 
 class SQLiteConnector(BaseConnector):
     """
@@ -12,18 +14,34 @@ class SQLiteConnector(BaseConnector):
 
     def connect(self) -> sqlite3.Connection:
         if not self.conn:
-            self.conn = sqlite3.connect(self.db_path)
+            # check_same_thread=False: test_connection runs inside a timeout
+            # worker thread while close() happens on the request thread.
+            self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
             self.conn.row_factory = sqlite3.Row
         return self.conn
 
-    def test_connection(self) -> bool:
+    def test_connection(self) -> TestConnectionResult:
+        # sqlite3.connect() happily creates a missing file, which would make
+        # a typo'd path "pass" — check existence up front instead.
+        if not os.path.exists(self.db_path):
+            return TestConnectionResult(
+                success=False, reachable=False, authenticated=False,
+                database_accessible=False,
+                error_message=f"SQLite file not found: {self.db_path}",
+                error_code="CONNECTION_REFUSED",
+            )
         try:
+            start = time.monotonic()
             conn = self.connect()
             cursor = conn.cursor()
-            cursor.execute("SELECT 1")
-            return cursor.fetchone()[0] == 1
-        except Exception:
-            return False
+            cursor.execute("SELECT sqlite_version()")
+            version = cursor.fetchone()[0]
+            latency = int((time.monotonic() - start) * 1000)
+            return TestConnectionResult(
+                success=True, version=f"SQLite {version}", latency_ms=latency,
+            )
+        except Exception as e:
+            return classify_connection_error(str(e))
 
     def get_tables(self) -> List[str]:
         conn = self.connect()

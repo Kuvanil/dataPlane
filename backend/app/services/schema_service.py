@@ -1,10 +1,19 @@
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import List, Dict, Any
+
+from app.core.config import settings
+from app.connectors.base import TestConnectionResult
 from app.connectors.sqlite import SQLiteConnector
 from app.connectors.postgres import PostgresConnector
 from app.connectors.mysql import MySQLConnector
 from app.connectors.oracle import OracleConnector
 from app.connectors.jdbc import JDBCConnector
 from app.models.connection import DBConnection
+
+logger = logging.getLogger(__name__)
+
 
 def get_connector(connection: DBConnection):
     """
@@ -64,12 +73,48 @@ class SchemaService:
             connector.close()
 
     @staticmethod
-    def test_connection(connection: DBConnection) -> bool:
-        """
-        Test if the connection parameters are correct.
-        """
-        connector = get_connector(connection)
+    def test_connection(connection: DBConnection) -> TestConnectionResult:
+        """Test connectivity with structured diagnostics and a hard timeout
+        (connector_tasks #4, FR4 + performance NFR: result ≤ 5s or a clear
+        timeout message). Never raises."""
+        timeout = settings.CONNECTOR_TEST_TIMEOUT_SECONDS
         try:
-            return connector.test_connection()
+            connector = get_connector(connection)
+        except Exception as e:
+            # Bad/missing config fields — reported as diagnostics, not a 500.
+            return TestConnectionResult(
+                success=False, reachable=False, authenticated=False,
+                database_accessible=False,
+                error_message=str(e), error_code="INVALID_CONFIG",
+            )
+
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(connector.test_connection)
+        try:
+            return future.result(timeout=timeout)
+        except FutureTimeoutError:
+            logger.warning(
+                "[connectors] stage=test connection_id=%s timed out after %ss",
+                connection.id, timeout,
+            )
+            return TestConnectionResult(
+                success=False, reachable=False, authenticated=False,
+                database_accessible=False,
+                error_message=f"Connection test timed out after {timeout} seconds",
+                error_code="CONNECTION_TIMEOUT",
+            )
+        except Exception as e:
+            # Drivers classify their own errors and shouldn't raise; if one
+            # does anyway, report it as diagnostics instead of a 500.
+            from app.connectors.base import classify_connection_error
+            logger.error("[connectors] stage=test connection_id=%s driver raised: %s",
+                         connection.id, e)
+            return classify_connection_error(str(e))
         finally:
-            connector.close()
+            executor.shutdown(wait=False)
+            # The abandoned worker thread may still hold a socket — close the
+            # connector so its FD is released as soon as connect() returns.
+            try:
+                connector.close()
+            except Exception as e:
+                logger.warning("[connectors] connector close after test failed: %s", e)

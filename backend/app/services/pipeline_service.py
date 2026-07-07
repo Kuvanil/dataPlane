@@ -644,7 +644,10 @@ class PipelineCRUD:
                 detail="source_connection_id and target_connection_id must differ",
             )
         for cid, label in ((source_connection_id, "source"), (target_connection_id, "target")):
-            if not db.query(DBConnection).filter(DBConnection.id == cid).first():
+            if not db.query(DBConnection).filter(
+                DBConnection.id == cid,
+                DBConnection.is_deleted == False,  # noqa: E712
+            ).first():
                 raise HTTPException(
                     status_code=404, detail=f"{label} connection {cid} not found",
                 )

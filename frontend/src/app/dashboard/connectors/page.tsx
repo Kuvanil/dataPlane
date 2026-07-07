@@ -7,8 +7,22 @@ interface Connector {
   name: string;
   type: string;
   config: Record<string, unknown>;
-  status?: string;
+  health_status?: string;
+  last_test_error?: string | null;
 }
+
+interface TestResponse {
+  status: string;
+  diagnostics?: { version?: string | null; latency_ms?: number | null };
+  error?: { code: string; message: string } | null;
+}
+
+const HEALTH_META: Record<string, { label: string; dot: string; text: string }> = {
+  healthy:  { label: "Healthy",    dot: "bg-emerald-400", text: "text-emerald-400" },
+  degraded: { label: "Degraded",   dot: "bg-amber-400",   text: "text-amber-400" },
+  down:     { label: "Down",       dot: "bg-rose-400",    text: "text-rose-400" },
+  unknown:  { label: "Not tested", dot: "bg-zinc-500",    text: "text-zinc-400" },
+};
 
 interface SchemaColumn { name: string; type: string; }
 interface SchemaData { id: number; name: string; schema: Record<string, SchemaColumn[]>; }
@@ -44,7 +58,7 @@ export default function ConnectorsPage() {
   const [creating, setCreating] = useState(false);
 
   const [testingId, setTestingId] = useState<number | null>(null);
-  const [testResults, setTestResults] = useState<Record<number, string>>({});
+  const [testResults, setTestResults] = useState<Record<number, { status: string; detail?: string }>>({});
 
   const [schemaModal, setSchemaModal] = useState<SchemaData | null>(null);
   const [scanningId, setScanningId] = useState<number | null>(null);
@@ -54,15 +68,10 @@ export default function ConnectorsPage() {
     setError(null);
     try {
       const data = await api.get<Connector[]>("/api/v1/connectors/");
-      setConnectors(data.map(c => ({ ...c, status: "Connected" })));
-    } catch {
-      setConnectors([
-        { id: 1, name: "CRM_Source_Analytics",  type: "sqlite", config: { path: "/shared/data/dataplane_crm_source.db" }, status: "Connected" },
-        { id: 2, name: "Data_Warehouse_Target",  type: "sqlite", config: { path: "/shared/data/dataplane_dw_target.db" }, status: "Connected" },
-        { id: 3, name: "ECommerce_MySQL",         type: "sqlite", config: { path: "/shared/data/dataplane_ecommerce.db" }, status: "Connected" },
-        { id: 4, name: "Finance_Oracle",          type: "oracle", config: { host: "localhost-sim", service_name: "FINDB" }, status: "Simulated" },
-        { id: 5, name: "HR_Postgres",             type: "postgres", config: { host: "postgres", port: 5432, dbname: "dataplane" }, status: "Connected" },
-      ]);
+      setConnectors(data);
+    } catch (err) {
+      setConnectors([]);
+      setError(err instanceof ApiError ? err.message : "Failed to load connectors.");
     } finally {
       setLoading(false);
     }
@@ -98,12 +107,18 @@ export default function ConnectorsPage() {
 
   const handleTest = async (id: number) => {
     setTestingId(id);
-    setTestResults(prev => ({ ...prev, [id]: "testing" }));
+    setTestResults(prev => ({ ...prev, [id]: { status: "testing" } }));
     try {
-      const result = await api.post<{ status: string }>(`/api/v1/connectors/${id}/test`, {});
-      setTestResults(prev => ({ ...prev, [id]: result.status }));
+      const result = await api.post<TestResponse>(`/api/v1/connectors/${id}/test`, {});
+      const detail = result.status === "connected"
+        ? [result.diagnostics?.version, result.diagnostics?.latency_ms != null ? `${result.diagnostics.latency_ms} ms` : null].filter(Boolean).join(" · ")
+        : result.error?.message;
+      setTestResults(prev => ({ ...prev, [id]: { status: result.status, detail: detail ?? undefined } }));
     } catch (err) {
-      setTestResults(prev => ({ ...prev, [id]: "failed" }));
+      setTestResults(prev => ({
+        ...prev,
+        [id]: { status: "failed", detail: err instanceof ApiError ? err.message : undefined },
+      }));
     } finally {
       setTestingId(null);
     }
@@ -149,7 +164,13 @@ export default function ConnectorsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {connectors.map((c) => {
             const meta = TYPE_META[c.type] ?? TYPE_META.sqlite;
-            const testStatus = testResults[c.id];
+            const test = testResults[c.id];
+            // Prefer a fresh test result from this session; otherwise the
+            // stored health status written by tests + the health scheduler.
+            const health = test?.status === "connected" ? HEALTH_META.healthy
+              : test?.status === "failed" ? HEALTH_META.down
+              : HEALTH_META[c.health_status ?? "unknown"] ?? HEALTH_META.unknown;
+            const statusDetail = test?.detail ?? c.last_test_error ?? undefined;
             return (
               <div key={c.id} className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800 backdrop-blur-sm flex flex-col gap-4 group hover:border-zinc-700 transition-all">
                 <div className="flex justify-between items-start">
@@ -159,9 +180,12 @@ export default function ConnectorsPage() {
                     </span>
                     <h4 className="font-semibold text-zinc-200 mt-2">{c.name}</h4>
                   </div>
-                  <span className={`flex items-center gap-1.5 text-xs ${testStatus === "connected" ? "text-emerald-400" : testStatus === "failed" ? "text-rose-400" : "text-emerald-400"}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${testStatus === "failed" ? "bg-rose-400" : "bg-emerald-400"}`} />
-                    {testStatus === "connected" ? "Connected" : testStatus === "failed" ? "Failed" : testStatus === "testing" ? "Testing..." : c.status ?? "Active"}
+                  <span
+                    className={`flex items-center gap-1.5 text-xs ${health.text}`}
+                    title={statusDetail}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${health.dot}`} />
+                    {test?.status === "testing" ? "Testing..." : health.label}
                   </span>
                 </div>
                 <div className="border-t border-zinc-800/50 pt-3 text-xs text-zinc-500">

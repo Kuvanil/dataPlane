@@ -7,7 +7,8 @@ try/except so one broken module degrades to an ``error``/``unavailable``
 tile instead of failing the whole endpoint (TRD FR6).
 
 Divergences from the task-spec pseudocode, matched to the real models:
-- ``DBConnection`` has no ``is_deleted`` column — all rows count.
+- ``DBConnection`` soft-deletes via ``is_deleted`` (connector_tasks #1) —
+  only non-deleted rows count.
 - Pipeline state lives on ``PipelineRun.status`` (``Pipeline`` itself has
   only ``enabled``): "running" counts current running/retrying runs,
   "failed" counts failed runs finished inside the selected range.
@@ -104,7 +105,11 @@ class DashboardService:
 
         # 1. Connectors (all-time — a connection either exists or it doesn't)
         try:
-            rows = self.db.query(DBConnection.type).all()
+            rows = (
+                self.db.query(DBConnection.type)
+                .filter(DBConnection.is_deleted == False)  # noqa: E712
+                .all()
+            )
             type_count = len({r[0] for r in rows})
             kpis.append(KPITile(
                 label="Connected Sources",
