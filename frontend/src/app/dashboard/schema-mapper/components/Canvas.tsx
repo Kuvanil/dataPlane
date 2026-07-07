@@ -86,6 +86,13 @@ export default function Canvas({
     let cancelled = false;
     setLoading(true);
     setError(null);
+    // Staging is per-mapping state: column ids are just `src_${table}_${col}`,
+    // so a selection carried across a mapping switch either applies to
+    // identically-named columns in the NEW mapping (creating an edge the user
+    // staged for the old one) or, if names don't collide, leaves a phantom
+    // "N staged" pill with no visible rows to un-toggle
+    // (review_schema_mapper_round2 #2).
+    setSelectedSourceIds([]);
     (async () => {
       try {
         const { api } = await import("@/lib/api");
@@ -265,13 +272,31 @@ export default function Canvas({
     );
   };
 
-  // O(1) row-level "is this staged" checks instead of Array.includes,
-  // matching the sourceMappedKeys Set pattern used for the analogous
-  // "is this mapped" check.
-  const selectedSourceIdSet = useMemo(
-    () => new Set(selectedSourceIds),
-    [selectedSourceIds],
-  );
+  // O(1) row-level "is this staged" checks, but carrying the staging ORDER
+  // (1-based): the click sequence is the concat order, and the rows render
+  // it as a numbered badge so "John Doe" vs "Doe John" is visible before
+  // the edge exists (review_schema_mapper_round2 #6).
+  const selectedSourceOrder = useMemo(() => {
+    const map = new Map<string, number>();
+    selectedSourceIds.forEach((id, i) => map.set(id, i + 1));
+    return map;
+  }, [selectedSourceIds]);
+
+  const clearSelection = () => setSelectedSourceIds([]);
+
+  // Escape clears the whole staging set — without this the only exit is
+  // re-clicking every staged column one by one
+  // (review_schema_mapper_round2 #8). Mounted once; a no-op functional
+  // update keeps it cheap when nothing is staged.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSelectedSourceIds((prev) => (prev.length > 0 ? [] : prev));
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <div
@@ -296,10 +321,11 @@ export default function Canvas({
             side="source"
             mappedKeys={sourceMappedKeys}
             draggingId={draggingSourceId}
-            selectedIds={selectedSourceIdSet}
+            selectedOrder={selectedSourceOrder}
             onDragStart={canEdit ? setDraggingSourceId : undefined}
             onDragEnd={() => setDraggingSourceId(null)}
             onToggleSelect={canEdit ? toggleSourceSelection : undefined}
+            onClearSelection={clearSelection}
           />
           <ConnectorOverlay
             height={svgHeight}
@@ -330,6 +356,16 @@ export default function Canvas({
             onTargetClick={canEdit ? connectStagedSources : undefined}
             stagedCount={selectedSourceIds.length}
           />
+        </div>
+      )}
+      {/* Legend for the row glyphs (key, NOT-NULL star, staging badges) —
+          previously unexplained anywhere (review_schema_mapper_round2 #10). */}
+      {!loading && !error && (
+        <div className="mt-3 text-center text-[10px] text-zinc-500">
+          🔑 primary key · <span className="text-amber-400 font-semibold">*</span> NOT NULL
+          {canEdit && (
+            <> · click source columns to stage them (numbers = concat order), then click a target — Esc clears</>
+          )}
         </div>
       )}
       {!canEdit && role && (
@@ -372,12 +408,13 @@ function SchemaPanel({
   mappedKeys,
   draggingId,
   hoverId,
-  selectedIds,
+  selectedOrder,
   onDragStart,
   onDragEnd,
   onDropHover,
   onDrop,
   onToggleSelect,
+  onClearSelection,
   onTargetClick,
   stagedCount,
 }: {
@@ -388,12 +425,14 @@ function SchemaPanel({
   mappedKeys: Set<string>;
   draggingId: string | null;
   hoverId?: string | null;
-  selectedIds?: Set<string>;
+  // id → 1-based staging position; the position is the concat order.
+  selectedOrder?: Map<string, number>;
   onDragStart?: (id: string) => void;
   onDragEnd?: () => void;
   onDropHover?: (id: string | null) => void;
   onDrop?: (n: ColumnNode) => void;
   onToggleSelect?: (id: string) => void;
+  onClearSelection?: () => void;
   onTargetClick?: (n: ColumnNode) => void;
   stagedCount?: number;
 }) {
@@ -416,9 +455,20 @@ function SchemaPanel({
       <div className={classNames("text-xs font-semibold mb-2 flex items-center gap-2", accent)}>
         <span>📥 {title}</span>
         {connId && <span className="text-zinc-500 font-normal">#{connId}</span>}
-        {side === "source" && (selectedIds?.size ?? 0) > 0 && (
-          <span className="ml-auto px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-violet-500/15 text-violet-300 border border-violet-500/30">
-            {selectedIds!.size} selected
+        {side === "source" && (selectedOrder?.size ?? 0) > 0 && (
+          <span className="ml-auto flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-violet-500/15 text-violet-300 border border-violet-500/30">
+            {selectedOrder!.size} selected
+            {/* Clear-all exit for the staging set; Esc does the same
+                (review_schema_mapper_round2 #8). */}
+            <button
+              type="button"
+              onClick={onClearSelection}
+              aria-label="Clear staged sources"
+              title="Clear staged sources (Esc)"
+              className="leading-none text-violet-300 hover:text-white"
+            >
+              ×
+            </button>
           </span>
         )}
         {side === "target" && (stagedCount ?? 0) > 0 && (
@@ -437,7 +487,15 @@ function SchemaPanel({
             const isMapped = mappedKeys.has(`${n.table}.${n.column}`);
             const isDragging = draggingId === n.id;
             const isHover = hoverId === n.id;
-            const isSelected = selectedIds?.has(n.id) ?? false;
+            const stagedPos = selectedOrder?.get(n.id);
+            const isSelected = stagedPos !== undefined;
+            // Mapped columns can't participate in staging: a mapped source
+            // always ends in the backend's many-to-many 422, a mapped target
+            // in its double-mapped 409 — don't offer a click the server is
+            // guaranteed to reject (review_schema_mapper_round2 #7).
+            const stageableSource =
+              side === "source" && !!onToggleSelect && !isMapped;
+            const clickableTarget = targetReadyForClick && !isMapped;
             return (
               <div
                 key={n.id}
@@ -473,17 +531,24 @@ function SchemaPanel({
                 }}
                 onClick={() => {
                   // Source: toggle into the multi-source staging set.
-                  if (side === "source" && onToggleSelect) {
+                  if (stageableSource) {
                     // Avoid hijacking a click that just finished a drag.
                     if (justDraggedRef.current) return;
-                    onToggleSelect(n.id);
+                    onToggleSelect!(n.id);
                   }
                   // Target: if sources are staged, a click creates the
                   // multi-source edge.
-                  if (side === "target" && onTargetClick && targetReadyForClick) {
+                  if (clickableTarget && onTargetClick) {
                     onTargetClick(n);
                   }
                 }}
+                title={
+                  side === "source" && isMapped && onToggleSelect
+                    ? "Already mapped — a source column can map to only one target"
+                    : targetReadyForClick && isMapped
+                      ? "Already mapped — edit the existing edge's sources instead"
+                      : undefined
+                }
                 className={classNames(
                   "flex items-center justify-between px-2 py-1.5 rounded text-[11px] font-mono border transition-all",
                   isDragging && "opacity-50",
@@ -493,15 +558,29 @@ function SchemaPanel({
                     : "border-transparent hover:bg-zinc-800/40",
                   isHover && "border-blue-500/40 bg-blue-500/10",
                   onDragStart ? "cursor-grab" : "",
-                  side === "source" && onToggleSelect ? "cursor-pointer" : "",
-                  targetReadyForClick ? "cursor-crosshair" : "",
+                  stageableSource ? "cursor-pointer" : "",
+                  clickableTarget ? "cursor-crosshair" : "",
+                  // While staging, mapped targets are visibly not an option.
+                  targetReadyForClick && isMapped && "opacity-40 cursor-not-allowed",
                 )}
                 style={{ minHeight: 32 }}
               >
                 <span className="flex items-center gap-1.5 min-w-0">
-                  {n.primary_key && <span className="text-amber-400 text-[9px]">🔑</span>}
+                  {n.primary_key && (
+                    <span role="img" aria-label="primary key" className="text-amber-400 text-[9px]">🔑</span>
+                  )}
                   {isSelected && (
-                    <span className="text-violet-300 text-[10px]" aria-label="selected">✓</span>
+                    // Numbered, not a checkmark: the staging position IS the
+                    // concat order, so the user sees "first_name(1) last_name(2)
+                    // → 'John Doe'" before the edge exists
+                    // (review_schema_mapper_round2 #6).
+                    <span
+                      role="img"
+                      aria-label={`staged as source ${stagedPos}`}
+                      className="w-3.5 h-3.5 shrink-0 rounded-full bg-violet-500/25 border border-violet-500/50 text-violet-200 text-[9px] font-bold flex items-center justify-center"
+                    >
+                      {stagedPos}
+                    </span>
                   )}
                   <span className="text-zinc-400 mr-1">{n.table}.</span>
                   <span className={classNames(side === "source" ? "text-blue-200" : "text-indigo-200", "truncate")}>
@@ -513,8 +592,12 @@ function SchemaPanel({
                   {/* TRD FR1: surface nullability in the raw schema panels.
                       NOT NULL columns get a small `*` suffix so the
                       distinction is visible before any mapping exists. */}
+                  {/* role="img" so the aria-label is actually announced —
+                      a bare span's aria-label is ignored by most screen
+                      readers (review_schema_mapper_round2 #10). */}
                   {!n.nullable && (
                     <span
+                      role="img"
                       className="ml-1 text-amber-400 font-semibold"
                       title="NOT NULL"
                       aria-label="NOT NULL"

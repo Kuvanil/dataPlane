@@ -20,7 +20,14 @@ function handle401() {
     // the browser navigates. If no handler is registered, fall back to the
     // original silent-redirect behavior so non-schema-mapper pages are
     // unaffected (mapper_tasks/05_session_timeout_autosave_loss.md).
-    onUnauthorized?.();
+    // A throwing handler must not abort the token clear + redirect below —
+    // that would wedge the app on an expired token, re-401ing every call
+    // (review_schema_mapper_round2 #12).
+    try {
+      onUnauthorized?.();
+    } catch (err) {
+      console.error("unauthorized handler failed", err);
+    }
     localStorage.removeItem("dp_token");
     window.location.href = "/login";
   }

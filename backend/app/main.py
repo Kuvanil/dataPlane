@@ -13,6 +13,7 @@ from app.api.routers import auth as auth_router
 from app.api.routers import autopilot as autopilot_router
 from app.api.routers import mappings as mappings_router
 from app.api.routers import schema_catalog as schema_catalog_router
+from app.api.routers import dashboard as dashboard_router
 from app.core.celery_app import celery_app  # noqa: F401  (registers tasks on import)
 from app.core.config import settings
 from app.core.database import Base, engine, SessionLocal
@@ -292,6 +293,7 @@ app.include_router(pipelines.router, prefix="/api/v1/pipelines", tags=["Pipeline
 app.include_router(audit_router.router, prefix="/api/v1/audit", tags=["Audit Trail"])
 app.include_router(auth_router.router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(autopilot_router.router, prefix="/api/v1/autopilot", tags=["AI Autopilot"])
+app.include_router(dashboard_router.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 
 @app.get("/health")
 def health_check():

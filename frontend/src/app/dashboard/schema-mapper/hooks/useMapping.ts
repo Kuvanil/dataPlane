@@ -102,6 +102,17 @@ export function useMapping(): UseMappingResult {
   const mappingIdRef = useRef<number | null>(null);
   const dirtyQueueRef = useRef<Array<() => Promise<void>>>([]);
   const flushTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // In-flight guard for flushDirty. MUST be a ref, not the `saving` state:
+  // the interval/visibilitychange handlers are registered in a mount-once
+  // effect and forever call the first render's flushDirty, whose closed-over
+  // `saving` is permanently false — a state-based guard never blocks those
+  // call sites, so two drains could overlap and double-shift the queue
+  // (running one op twice and dropping the next without executing it —
+  // review_schema_mapper_round2 #1). A ref reads current from any closure.
+  const flushingRef = useRef(false);
+  // Set by the 401 handler so the beforeunload prompt stands down during the
+  // forced redirect to /login (review_schema_mapper_round2 #5).
+  const sessionExpiredRef = useRef(false);
 
   const showToast = useCallback(
     (kind: "info" | "error" | "success", message: string) => {
@@ -144,6 +155,13 @@ export function useMapping(): UseMappingResult {
     // flush async PUTs here (the browser kills in-flight requests); the
     // best we can do is ask the user to cancel the navigation.
     const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      // Don't prompt on the 401 forced redirect: the queue is non-empty by
+      // definition in that path (that's what triggered the warning flag),
+      // but staying on the page can't save anything — the token is already
+      // gone. Without this, the native "Leave site?" dialog interrupts the
+      // logout, and choosing "Stay" strands the user on a dead session that
+      // re-prompts on the next API call (review_schema_mapper_round2 #5).
+      if (sessionExpiredRef.current) return;
       if (dirtyQueueRef.current.length > 0) {
         e.preventDefault();
         e.returnValue = "";
@@ -161,6 +179,9 @@ export function useMapping(): UseMappingResult {
     // actually survives the redirect and closes the silent-loss NFR gap
     // mapper_tasks #5 targeted.
     const onUnauthorized = () => {
+      // Stand the beforeunload prompt down before handle401 hard-navigates —
+      // see onBeforeUnload above (review_schema_mapper_round2 #5).
+      sessionExpiredRef.current = true;
       const pending = dirtyQueueRef.current.length;
       if (pending > 0) {
         try {
@@ -196,7 +217,8 @@ export function useMapping(): UseMappingResult {
   // pending count — splicing the whole queue out up front (the prior
   // behavior) discarded failed ops silently, defeating those warnings.
   const flushDirty = useCallback(async () => {
-    if (saving || dirtyQueueRef.current.length === 0) return;
+    if (flushingRef.current || dirtyQueueRef.current.length === 0) return;
+    flushingRef.current = true;
     setSaving(true);
     try {
       while (dirtyQueueRef.current.length > 0) {
@@ -211,9 +233,10 @@ export function useMapping(): UseMappingResult {
       setError(message);
       showToast("error", message);
     } finally {
+      flushingRef.current = false;
       setSaving(false);
     }
-  }, [saving, showToast]);
+  }, [showToast]);
 
   const enqueue = useCallback((op: () => Promise<void>) => {
     dirtyQueueRef.current.push(op);

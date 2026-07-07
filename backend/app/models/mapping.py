@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from sqlalchemy import (
     Column, Integer, String, Text, DateTime, ForeignKey, JSON,
-    UniqueConstraint, Float, Index,
+    UniqueConstraint, Float, Index, text,
 )
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -93,6 +93,22 @@ class FieldMapping(Base):
     __table_args__ = (
         UniqueConstraint("version_id", "target_table", "target_column",
                          name="uq_field_target_per_version"),
+        # uq_field_target_per_version does NOT cover drafts: their
+        # version_id is NULL, and SQL unique constraints treat NULLs as
+        # distinct, so any number of draft edges could share a target. This
+        # partial unique index is the DB backstop for the service-level
+        # _check_target_not_mapped guard, which is check-then-insert and
+        # therefore racy under concurrency (review_schema_mapper_round2
+        # #11). NOTE: no migration tooling in this repo — create_all only
+        # creates it on fresh databases; existing deployments need a manual
+        # CREATE UNIQUE INDEX with the same WHERE clause.
+        Index(
+            "uq_field_target_per_draft",
+            "mapping_id", "target_table", "target_column",
+            unique=True,
+            sqlite_where=text("version_id IS NULL"),
+            postgresql_where=text("version_id IS NULL"),
+        ),
         Index("ix_field_mapping_mapping", "mapping_id"),
     )
 

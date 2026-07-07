@@ -201,6 +201,60 @@ def test_add_edge_allows_single_source_with_concat_kind(db, admin, seeded_connec
     assert edge.id is not None
 
 
+def test_add_edge_blocks_single_source_concat_with_no_source_part(db, admin, seeded_connections):
+    """Round-2 review #4: a concat whose parts consume FEWER sources than the
+    edge binds silently drops a source column at SQL-compile time. The exact
+    parts-count check must apply to single-source edges too, not hide behind
+    the multi-source early return."""
+    src, tgt = seeded_connections
+    m = MappingService.create_mapping(
+        db, source_id=src.id, target_id=tgt.id,
+        name="Concat Underconsume", actor=admin.email,
+    )
+    with pytest.raises(HTTPException) as e:
+        MappingService.add_edge(
+            db, m.id,
+            target={"table": "t1", "column": "c1", "type": "TEXT", "nullable": False},
+            sources=[{"table": "s1", "column": "c1", "type": "TEXT", "nullable": False}],
+            # All-literal parts: 0 'source' parts against 1 bound source.
+            transformation={
+                "kind": "concat",
+                "parts": [{"kind": "literal", "value": "static"}],
+            },
+            actor=admin.email,
+        )
+    assert e.value.status_code == 422
+    assert e.value.detail["kind"] == "grammar_error"
+    assert "0 'source' part(s)" in e.value.detail["message"]
+
+
+def test_update_edge_transformation_blocks_single_source_concat_underconsumption(
+    db, admin, seeded_connections,
+):
+    """Same defect class via the edit-after-create path: editing a 1-source
+    edge's transformation to an all-literal concat must be rejected."""
+    src, tgt = seeded_connections
+    m = MappingService.create_mapping(
+        db, source_id=src.id, target_id=tgt.id,
+        name="Concat Underconsume Update", actor=admin.email,
+    )
+    edge = MappingService.add_edge(
+        db, m.id,
+        target={"table": "t1", "column": "c1", "type": "TEXT", "nullable": False},
+        sources=[{"table": "s1", "column": "c1", "type": "TEXT", "nullable": False}],
+        transformation={"kind": "direct"},
+        actor=admin.email,
+    )
+    with pytest.raises(HTTPException) as e:
+        MappingService.update_edge_transformation(
+            db, m.id, edge.id,
+            {"kind": "concat", "parts": [{"kind": "literal", "value": "x"}]},
+            actor=admin.email,
+        )
+    assert e.value.status_code == 422
+    assert e.value.detail["kind"] == "grammar_error"
+
+
 def test_update_edge_transformation_blocks_multi_source_non_concat(db, admin, seeded_connections):
     """Changing the transformation on an already-multi-source edge must also
     be blocked if the new kind can't handle >1 sources."""
@@ -775,6 +829,46 @@ def test_accept_suggestion_blocks_second_suggestion_with_same_source(
     # sug2 must remain pending — the failed accept must not have side-effects.
     db.refresh(sug2)
     assert sug2.status == "pending"
+
+
+def test_accept_suggestion_blocks_already_mapped_target(db, admin, seeded_connections):
+    """Round-2 review #3: the double-mapped-target guard must apply to the
+    suggestion path too. Map t1.c1 manually, then accept an AI suggestion for
+    the same target — two edges to one target is ambiguous at
+    Pipelines-execution time regardless of which path created the second."""
+    from app.models.mapping import AISuggestion
+    src, tgt = seeded_connections
+    m = MappingService.create_mapping(
+        db, source_id=src.id, target_id=tgt.id,
+        name="Target dup via suggestion", actor=admin.email,
+    )
+    MappingService.add_edge(
+        db, m.id,
+        target={"table": "t1", "column": "c1", "type": "TEXT", "nullable": False},
+        sources=[{"table": "s1", "column": "c1", "type": "TEXT", "nullable": False}],
+        transformation={"kind": "direct"},
+        actor=admin.email,
+    )
+    sug = AISuggestion(
+        mapping_id=m.id,
+        target_table="t1", target_column="c1", target_type="TEXT",
+        source_table="s1", source_column="c2", source_type="TEXT",
+        confidence=88.0, reason="dup target", status="pending",
+    )
+    db.add(sug)
+    db.commit()
+    db.refresh(sug)
+
+    with pytest.raises(HTTPException) as e:
+        MappingService.accept_suggestion(
+            db, m.id, sug.id, {"kind": "direct"}, actor=admin.email,
+        )
+    assert e.value.status_code == 409
+    assert "already mapped" in e.value.detail.lower()
+
+    # The failed accept must leave the suggestion pending.
+    db.refresh(sug)
+    assert sug.status == "pending"
 
 
 def test_check_no_many_to_many_is_independent_helper(db, admin, seeded_connections):

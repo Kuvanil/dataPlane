@@ -83,7 +83,11 @@ const nodeTypes = { tableNode: TableNode };
 /* ────────────────────────── Main Page ────────────────────────── */
 export default function VisualizePage() {
   const [graphData, setGraphData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
+  // Starts false: fetchGraph is gated on BOTH connection ids being set, so
+  // an initial `true` with no auto-pickable pair left the spinner running
+  // forever (dashboard_static_ui_tasks #5). The no-selection case renders
+  // an explicit empty state instead.
+  const [loading, setLoading] = useState(false);
   const [selectedNode, setSelectedNode] = useState<any>(null);
   const [viewMode, setViewMode] = useState<"all" | "source" | "target">("all");
   const [connections, setConnections] = useState<any[]>([]);
@@ -96,8 +100,16 @@ export default function VisualizePage() {
       const list = await api.get<{ id: number }[]>("/api/v1/connectors/");
       const data = Array.isArray(list) ? list : [];
       setConnections(data);
-      if (data.some((c) => c.id === 1)) setSourceId(1);
-      if (data.some((c) => c.id === 2)) setTargetId(2);
+      // Default to the first two connectors, whatever their ids — the
+      // previous magic-id-1/2 auto-pick only worked because the seed data
+      // happens to use those ids, and always opened on the same pair
+      // (dashboard_static_ui_tasks #4).
+      if (data.length >= 2) {
+        setSourceId(data[0].id);
+        setTargetId(data[1].id);
+      } else if (data.length === 1) {
+        setSourceId(data[0].id);
+      }
     } catch (err) {
       console.error("Connections fetch failed:", err);
     }
@@ -179,26 +191,35 @@ export default function VisualizePage() {
           <p className="text-xs text-zinc-500">Interactive graph showing table relationships, data risks, and AI-matched mappings</p>
         </div>
         <div className="flex items-center gap-2">
-          <select
-            value={sourceId ?? ""}
-            onChange={(e) => setSourceId(e.target.value === "" ? null : Number(e.target.value))}
-            className="px-2 py-1.5 text-xs font-semibold rounded-lg bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-          >
-            <option value="">Source Connection</option>
-            {connections.map((c: any) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
-          <select
-            value={targetId ?? ""}
-            onChange={(e) => setTargetId(e.target.value === "" ? null : Number(e.target.value))}
-            className="px-2 py-1.5 text-xs font-semibold rounded-lg bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
-          >
-            <option value="">Target Connection</option>
-            {connections.map((c: any) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
-          </select>
+          {/* Visible labels so these read as connection pickers, not
+              buttons — they were bare selects visually identical to the
+              view-mode buttons beside them (dashboard_static_ui_tasks #4). */}
+          <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+            📤 Source
+            <select
+              value={sourceId ?? ""}
+              onChange={(e) => setSourceId(e.target.value === "" ? null : Number(e.target.value))}
+              className="px-2 py-1.5 text-xs font-semibold rounded-lg bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+            >
+              <option value="">Select…</option>
+              {connections.map((c: any) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+            📥 Target
+            <select
+              value={targetId ?? ""}
+              onChange={(e) => setTargetId(e.target.value === "" ? null : Number(e.target.value))}
+              className="px-2 py-1.5 text-xs font-semibold rounded-lg bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+            >
+              <option value="">Select…</option>
+              {connections.map((c: any) => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </label>
           {(["all", "source", "target"] as const).map((mode) => (
             <button
               key={mode}
@@ -226,6 +247,22 @@ export default function VisualizePage() {
           <div className="flex flex-col items-center gap-3">
             <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
             <span className="text-sm">Building database graph...</span>
+          </div>
+        </div>
+      ) : sourceId == null || targetId == null ? (
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="max-w-md text-center flex flex-col items-center gap-2">
+            <span className="text-3xl">🌐</span>
+            <p className="text-sm text-zinc-300 font-medium">
+              Pick a source and a target connection above to build the graph.
+            </p>
+            {connections.length < 2 && (
+              <p className="text-xs text-zinc-500">
+                {connections.length === 0
+                  ? "No connections available — add one on the Connectors tab first."
+                  : "Only one connection exists — the graph compares two, add another on the Connectors tab."}
+              </p>
+            )}
           </div>
         </div>
       ) : graphError ? (

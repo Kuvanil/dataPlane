@@ -101,20 +101,28 @@ export default function WorkspaceHeader({
               className="text-base font-semibold text-zinc-100 bg-zinc-800 border border-blue-500/40 rounded px-2 py-0.5 min-w-0 max-w-md focus:outline-none focus:border-blue-500"
             />
           ) : (
-            <h2 className="text-base font-semibold text-zinc-100 truncate flex items-center gap-2">
-              <span>{mapping.name}</span>
+            <>
+              {/* `truncate` must sit on a block element, not a flex
+                  container — text-overflow doesn't apply to flex, so the
+                  previous flex h2 hard-clipped long names with no ellipsis.
+                  The ✎ button is a sibling, not heading content, so screen
+                  readers don't read it as part of the heading
+                  (review_schema_mapper_round2 #9). */}
+              <h2 className="text-base font-semibold text-zinc-100 truncate min-w-0">
+                {mapping.name}
+              </h2>
               {canEdit && (
                 <button
                   type="button"
                   onClick={startEdit}
                   aria-label="Rename mapping"
                   title="Rename mapping"
-                  className="text-zinc-500 hover:text-zinc-200 transition-colors text-xs"
+                  className="shrink-0 text-zinc-500 hover:text-zinc-200 transition-colors text-xs"
                 >
                   ✎
                 </button>
               )}
-            </h2>
+            </>
           )}
           <span
             className={classNames(

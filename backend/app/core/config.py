@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     SECRET_KEY: str = "change-me-in-production-use-a-long-random-string"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480
     ADMIN_DEFAULT_PASSWORD: str = "admin123"
+    # Dashboard aggregation cache (dashboard_tasks #2). TTL <= 0 disables caching.
+    DASHBOARD_CACHE_TTL: int = 30
+    DASHBOARD_CACHE_MAXSIZE: int = 256
 
     class Config:
         env_file = ".env"

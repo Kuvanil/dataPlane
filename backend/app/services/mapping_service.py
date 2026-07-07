@@ -617,10 +617,11 @@ class MappingService:
         this draft (mapper_tasks #1 completeness review). Many-to-one (N:1)
         is expressed as ONE edge with multiple `sources` -- not two competing
         edges to the same target, which would be ambiguous at
-        Pipelines-execution time (which edge's SQL fragment wins?). Scoped to
-        add_edge only: accept_suggestion's target is chosen by the AI-match
-        step, not the user, so it's out of scope for this manual-creation
-        guard.
+        Pipelines-execution time (which edge's SQL fragment wins?). Enforced
+        on BOTH creation paths -- add_edge and _add_edge_internal (i.e.
+        accept_suggestion) -- because the execution-time ambiguity doesn't
+        care whether the second edge came from a user drag or an accepted AI
+        suggestion (review_schema_mapper_round2 #3).
         """
         existing = (
             db.query(FieldMapping)
@@ -633,12 +634,16 @@ class MappingService:
             .first()
         )
         if existing:
+            # User-facing message: name the COLUMN, not the internal edge id —
+            # edge ids are never displayed in the mapper UI, so "edge 47" is
+            # meaningless to the person reading the toast
+            # (review_schema_mapper_round2 #7).
             raise HTTPException(
                 status_code=409,
                 detail=(
-                    f"target column {target['table']}.{target['column']} is already "
-                    f"mapped by edge {existing.id}; edit that edge's sources instead "
-                    f"of creating a second one"
+                    f"target column {target['table']}.{target['column']} is "
+                    f"already mapped; edit the existing mapping's sources "
+                    f"instead of creating a second one"
                 ),
             )
 
@@ -656,24 +661,12 @@ class MappingService:
         per source column: _sql_concat already rejects too MANY source
         parts, but silently under-consumes too FEW, which would compile SQL
         that drops a bound source column with no error (mapper_tasks epic
-        completeness review).
+        completeness review). This exact-count check runs for ANY source
+        count -- a single-source concat with zero 'source' parts drops its
+        bound column just the same, so it must not hide behind the
+        multi-source early return (review_schema_mapper_round2 #4).
         """
         kind = (transformation or {}).get("kind")
-        if sources_count <= 1:
-            return
-        if kind not in MULTI_SOURCE_KINDS:
-            raise HTTPException(
-                status_code=422,
-                detail={
-                    "kind": "grammar_error",
-                    "message": (
-                        f"transformation kind '{kind}' does not support "
-                        f"{sources_count} source columns; only "
-                        f"{sorted(MULTI_SOURCE_KINDS)} do"
-                    ),
-                    "location": "kind",
-                },
-            )
         if kind == "concat":
             parts = (transformation or {}).get("parts") or []
             source_parts = sum(1 for p in parts if p.get("kind") == "source")
@@ -690,6 +683,21 @@ class MappingService:
                         "location": "concat.parts",
                     },
                 )
+        if sources_count <= 1:
+            return
+        if kind not in MULTI_SOURCE_KINDS:
+            raise HTTPException(
+                status_code=422,
+                detail={
+                    "kind": "grammar_error",
+                    "message": (
+                        f"transformation kind '{kind}' does not support "
+                        f"{sources_count} source columns; only "
+                        f"{sorted(MULTI_SOURCE_KINDS)} do"
+                    ),
+                    "location": "kind",
+                },
+            )
 
     @staticmethod
     def _add_edge_internal(db: Session, m: Mapping, *,
@@ -704,6 +712,12 @@ class MappingService:
         # this; restoring it ensures the suggestion path cannot create
         # many-to-many mappings.
         MappingService._check_no_many_to_many(db, m.id, target, sources)
+
+        # Same double-mapped-target guard as add_edge: accepting an AI
+        # suggestion for a target the user already mapped manually would
+        # create the exact two-edges-one-target ambiguity add_edge 409s on
+        # (review_schema_mapper_round2 #3).
+        MappingService._check_target_not_mapped(db, m.id, target)
 
         try:
             parse(transformation or {"kind": "direct"})
