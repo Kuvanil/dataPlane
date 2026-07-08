@@ -18,6 +18,7 @@ celery_app = Celery(
     include=[
         "app.tasks.ai_tasks",
         "app.tasks.connector_tasks",
+        "app.tasks.autopilot_tasks",
         "app.workers.mapping_tasks",
     ],
 )
@@ -35,6 +36,12 @@ celery_app.conf.update(
         "health-check-all-connections": {
             "task": "app.tasks.connector_tasks.run_all_health_checks",
             "schedule": crontab(minute=f"*/{settings.HEALTH_CHECK_INTERVAL_MINUTES}"),
+        },
+        # Safety-net sweep; the primary path for the ≤10s NFR is the inline
+        # dispatch from the drift/health tasks (ai_autopilot_tasks #5).
+        "autopilot-evaluate-recommendations": {
+            "task": "app.tasks.autopilot_tasks.evaluate_recommendations_task",
+            "schedule": crontab(minute=f"*/{settings.AUTOPILOT_EVALUATE_INTERVAL_MINUTES}"),
         },
     },
     timezone="UTC",

@@ -440,7 +440,17 @@ def check_schema_drift_task(self) -> Dict[str, Any]:
     finally:
         db.close()
 
-    return {"checked": len(results), "drifted": sum(1 for r in results if r.get("drift"))}
+    drifted = sum(1 for r in results if r.get("drift"))
+    if drifted:
+        # Autopilot ≤10s NFR: evaluate triggers now instead of waiting for
+        # the beat sweep. Never let this break the drift task itself.
+        try:
+            from app.tasks.autopilot_tasks import evaluate_recommendations_task
+            evaluate_recommendations_task.delay()
+        except Exception as exc:
+            logger.warning("autopilot evaluate dispatch after drift failed: %s", exc)
+
+    return {"checked": len(results), "drifted": drifted}
 
 
 @celery_app.task(name="app.tasks.ai_tasks.run_autopilot_task", bind=True)

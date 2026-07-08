@@ -22,6 +22,13 @@ class Settings(BaseSettings):
     CONNECTOR_TEST_TIMEOUT_SECONDS: int = 5
     HEALTH_CHECK_INTERVAL_MINUTES: int = 5
     HEALTH_CHECK_RATE_LIMIT: str = "10/m"
+    # AI Autopilot governance (ai_autopilot_tasks #2/#5/#7).
+    AUTOPILOT_TYPE_AUTO_LIMIT_PER_HOUR: int = 10
+    AUTOPILOT_GLOBAL_AUTO_LIMIT_PER_HOUR: int = 20
+    AUTOPILOT_EVALUATE_INTERVAL_MINUTES: int = 2
+    AUTOPILOT_BREAKER_THRESHOLD: int = 3
+    AUTOPILOT_BREAKER_WINDOW_MINUTES: int = 60
+    AUTOPILOT_DRIFT_LOOKBACK_HOURS: int = 24
 
     class Config:
         env_file = ".env"

@@ -1,254 +1,272 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { api } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { api, ApiError } from "@/lib/api";
+import ActionLog from "./components/ActionLog";
+import ApprovalQueue from "./components/ApprovalQueue";
+import PolicyPanel from "./components/PolicyPanel";
+import RunConsole from "./components/RunConsole";
+import type {
+  ActionLogEntry,
+  AutopilotPolicyEntry,
+  Paginated,
+  Recommendation,
+  Role,
+} from "./lib/types";
 
-interface Connector {
-  id: number;
-  name: string;
-  type: string;
-}
+type Tab = "console" | "approvals" | "policy" | "actions";
 
-interface LogEntry {
-  step: string;
-  message: string;
-  level: string;
-  created_at: string;
-}
-
-interface RunLogsResponse {
-  run_id: string;
-  status: string;
-  logs: LogEntry[];
-}
-
-const STEP_ICONS: Record<string, string> = {
-  init: "🤖",
-  schema: "🔍",
-  matching: "🧠",
-  diff: "📊",
-  security: "🛡️",
-  sql: "💾",
-  execute: "🚀",
-  complete: "✅",
-  error: "❌",
-};
+const TABS: Array<{ key: Tab; label: string }> = [
+  { key: "console", label: "Run console" },
+  { key: "approvals", label: "Approvals" },
+  { key: "policy", label: "Policy" },
+  { key: "actions", label: "Action log" },
+];
 
 export default function AutopilotPage() {
-  const [connectors, setConnectors] = useState<Connector[]>([]);
-  const [sourceId, setSourceId] = useState<string>("");
-  const [targetId, setTargetId] = useState<string>("");
-  const [mode, setMode] = useState<"suggest" | "execute">("suggest");
-  const [runId, setRunId] = useState<string | null>(null);
-  const [status, setStatus] = useState<string>("");
-  const [logs, setLogs] = useState<LogEntry[]>([]);
-  const [running, setRunning] = useState(false);
-  const [error, setError] = useState("");
-  const consoleRef = useRef<HTMLDivElement>(null);
-  const pollingRef = useRef<boolean>(false);
+  const [tab, setTab] = useState<Tab>("console");
+  const [role, setRole] = useState<Role | null>(null);
+  const [policies, setPolicies] = useState<AutopilotPolicyEntry[]>([]);
+  const [recs, setRecs] = useState<Recommendation[]>([]);
+  const [pendingCount, setPendingCount] = useState(0);
+  const [actions, setActions] = useState<ActionLogEntry[]>([]);
+  const [statusFilter, setStatusFilter] = useState("pending");
+  const [busyId, setBusyId] = useState<number | null>(null);
+  const [savingType, setSavingType] = useState<string | null>(null);
+  const [evaluating, setEvaluating] = useState(false);
+  const [banner, setBanner] = useState<{ kind: "info" | "error" | "success"; text: string } | null>(null);
 
-  useEffect(() => {
-    api.get<Connector[]>("/api/v1/connectors/").then(setConnectors).catch(() => {});
+  const showBanner = useCallback((kind: "info" | "error" | "success", text: string) => {
+    setBanner({ kind, text });
+    setTimeout(() => setBanner(null), 6000);
   }, []);
 
-  // Cleanup polling on unmount
+  const fail = useCallback(
+    (err: unknown, fallback: string) => {
+      showBanner("error", err instanceof ApiError ? err.message : fallback);
+    },
+    [showBanner],
+  );
+
   useEffect(() => {
-    return () => {
-      pollingRef.current = false;
-    };
+    api
+      .get<{ role: Role }>("/api/v1/auth/me")
+      .then((me) => setRole(me.role))
+      .catch(() => setRole(null));
   }, []);
 
-  function scrollConsole() {
-    if (consoleRef.current) {
-      consoleRef.current.scrollTop = consoleRef.current.scrollHeight;
-    }
-  }
-
-  async function poll(rid: string) {
-    if (!pollingRef.current) return;
+  const loadPolicies = useCallback(async () => {
     try {
-      const data = await api.get<RunLogsResponse>(`/api/v1/autopilot/runs/${rid}/logs`);
-      setLogs(data.logs);
-      setStatus(data.status);
-      scrollConsole();
-      if (data.status === "running" && pollingRef.current) {
-        setTimeout(() => poll(rid), 2000);
-      } else {
-        pollingRef.current = false;
-        setRunning(false);
+      const r = await api.get<{ policies: AutopilotPolicyEntry[] }>(
+        "/api/v1/autopilot/policy",
+      );
+      setPolicies(r.policies);
+    } catch (err) {
+      fail(err, "Failed to load policy.");
+    }
+  }, [fail]);
+
+  const loadRecs = useCallback(
+    async (status: string) => {
+      try {
+        const r = await api.get<Paginated<Recommendation>>(
+          `/api/v1/autopilot/recommendations?status=${encodeURIComponent(status)}&limit=100`,
+        );
+        setRecs(r.items);
+        if (status === "pending") {
+          setPendingCount(r.total);
+        } else {
+          const p = await api.get<Paginated<Recommendation>>(
+            "/api/v1/autopilot/recommendations?status=pending&limit=1",
+          );
+          setPendingCount(p.total);
+        }
+      } catch (err) {
+        fail(err, "Failed to load recommendations.");
       }
-    } catch {
-      pollingRef.current = false;
-      setRunning(false);
-    }
-  }
+    },
+    [fail],
+  );
 
-  const handleRun = async () => {
-    if (!sourceId || !targetId) return;
-    setError("");
-    setLogs([]);
-    setStatus("running");
-    setRunning(true);
-    pollingRef.current = false; // stop any previous poll
+  const loadActions = useCallback(async () => {
     try {
-      const res = await api.post<{ run_id: string; status: string }>("/api/v1/autopilot/run", {
-        source_id: Number(sourceId),
-        target_id: Number(targetId),
-        mode,
-        model: "llama3",
+      const r = await api.get<Paginated<ActionLogEntry>>(
+        "/api/v1/autopilot/actions?limit=100",
+      );
+      setActions(r.items);
+    } catch (err) {
+      fail(err, "Failed to load action log.");
+    }
+  }, [fail]);
+
+  useEffect(() => {
+    void loadPolicies();
+    void loadRecs("pending");
+    void loadActions();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleStatusFilter = (s: string) => {
+    setStatusFilter(s);
+    void loadRecs(s);
+  };
+
+  const handleSavePolicy = async (
+    actionType: string,
+    autonomy: AutopilotPolicyEntry["autonomy"],
+    maxAutoPerHour: number,
+  ) => {
+    setSavingType(actionType);
+    try {
+      await api.put(`/api/v1/autopilot/policy/${actionType}`, {
+        autonomy,
+        max_auto_per_hour: maxAutoPerHour,
       });
-      setRunId(res.run_id);
-      pollingRef.current = true;
-      setTimeout(() => poll(res.run_id), 1000);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Failed to start autopilot";
-      setError(msg);
-      setRunning(false);
+      showBanner("success", `Policy for ${actionType} saved.`);
+      await loadPolicies();
+    } catch (err) {
+      fail(err, "Failed to save policy.");
+    } finally {
+      setSavingType(null);
     }
   };
 
-  const handleStop = () => {
-    pollingRef.current = false;
-    setRunning(false);
-    setStatus("stopped");
+  const decide = async (id: number, verb: "approve" | "reject") => {
+    setBusyId(id);
+    try {
+      await api.post(`/api/v1/autopilot/recommendations/${id}/${verb}`, {});
+      showBanner(
+        verb === "approve" ? "success" : "info",
+        verb === "approve"
+          ? `Recommendation #${id} approved — executing.`
+          : `Recommendation #${id} rejected.`,
+      );
+      await Promise.all([loadRecs(statusFilter), loadActions()]);
+    } catch (err) {
+      fail(err, `Failed to ${verb} recommendation.`);
+    } finally {
+      setBusyId(null);
+    }
   };
 
-  const sourceName = connectors.find((c) => String(c.id) === sourceId)?.name ?? "";
-  const targetName = connectors.find((c) => String(c.id) === targetId)?.name ?? "";
+  const handleModify = async (id: number, payload: Record<string, unknown>) => {
+    setBusyId(id);
+    try {
+      await api.post(`/api/v1/autopilot/recommendations/${id}/modify`, { payload });
+      showBanner("success", `Recommendation #${id} payload updated.`);
+      await loadRecs(statusFilter);
+    } catch (err) {
+      fail(err, "Failed to modify recommendation.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleEvaluate = async () => {
+    setEvaluating(true);
+    try {
+      const r = await api.post<{ created: number; refreshed: number; superseded: number }>(
+        "/api/v1/autopilot/evaluate",
+        {},
+      );
+      showBanner(
+        "info",
+        `Evaluated: ${r.created} new, ${r.refreshed} refreshed, ${r.superseded} superseded.`,
+      );
+      await loadRecs(statusFilter);
+    } catch (err) {
+      fail(err, "Evaluation failed.");
+    } finally {
+      setEvaluating(false);
+    }
+  };
+
+  const handleQueuedForApproval = (recId: number, alreadyPending: boolean) => {
+    showBanner(
+      "info",
+      alreadyPending
+        ? `An identical execute request is already pending approval (#${recId}).`
+        : `Execute request queued for admin approval (#${recId}).`,
+    );
+    setTab("approvals");
+    setStatusFilter("pending");
+    void loadRecs("pending");
+  };
 
   return (
-    <div className="p-8 grid grid-cols-1 lg:grid-cols-3 gap-6">
-      {/* Console log area */}
-      <div className="lg:col-span-2 flex flex-col gap-4 rounded-2xl bg-zinc-900 border border-zinc-800 p-6 backdrop-blur-sm">
-        <div className="flex justify-between items-center border-b border-zinc-800 pb-4">
-          <h3 className="font-semibold text-zinc-200">AI Execution Console</h3>
-          {running ? (
-            <span className="flex items-center gap-1.5 text-xs text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20 animate-pulse">
-              <span className="w-1.5 h-1.5 bg-blue-400 rounded-full" /> Running
-            </span>
-          ) : status === "completed" ? (
-            <span className="flex items-center gap-1.5 text-xs text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
-              ✅ Completed
-            </span>
-          ) : status === "failed" ? (
-            <span className="flex items-center gap-1.5 text-xs text-red-400 bg-red-500/10 px-3 py-1 rounded-full border border-red-500/20">
-              ❌ Failed
-            </span>
-          ) : (
-            <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-800 px-3 py-1 rounded-full border border-zinc-700">
-              Idle
-            </span>
-          )}
-        </div>
-        <div
-          ref={consoleRef}
-          className="flex-1 font-mono text-xs text-zinc-400 bg-zinc-950 p-4 rounded-xl border border-zinc-800 overflow-y-auto max-h-[420px] flex flex-col gap-1.5"
-        >
-          {logs.length === 0 ? (
-            <div className="text-zinc-600 italic">
-              {running ? "Waiting for agent output..." : "Select source and target, then click Run Autopilot."}
-            </div>
-          ) : (
-            logs.map((lg, i) => (
-              <div
-                key={i}
-                className={`flex gap-2 ${lg.level === "error" ? "text-red-400" : lg.level === "warning" ? "text-amber-400" : "text-zinc-300"}`}
-              >
-                <span className="shrink-0">{STEP_ICONS[lg.step] ?? "•"}</span>
-                <span className="text-zinc-500 shrink-0">[{new Date(lg.created_at).toLocaleTimeString()}]</span>
-                <span>{lg.message}</span>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Control Panel */}
-      <div className="flex flex-col gap-4 rounded-2xl bg-zinc-900 border border-zinc-800 p-6 backdrop-blur-sm justify-between">
+    <div className="p-8 flex flex-col gap-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="font-semibold text-zinc-200 mb-2">Autopilot Panel</h3>
-          <p className="text-xs text-zinc-400 leading-relaxed mb-4">
-            AI autonomously matches schemas, detects PII, and generates migration SQL.
+          <h3 className="text-lg font-semibold text-zinc-200">AI Autopilot</h3>
+          <p className="text-xs text-zinc-500">
+            Policy-governed recommendations with human-in-the-loop approval and
+            full audit
           </p>
-          <div className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-zinc-500">Source Database</label>
-              <select
-                value={sourceId}
-                onChange={(e) => setSourceId(e.target.value)}
-                className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2"
-                disabled={running}
-              >
-                <option value="">— Select source —</option>
-                {connectors.map((c) => (
-                  <option key={c.id} value={String(c.id)}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-zinc-500">Target Database</label>
-              <select
-                value={targetId}
-                onChange={(e) => setTargetId(e.target.value)}
-                className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2"
-                disabled={running}
-              >
-                <option value="">— Select target —</option>
-                {connectors.filter((c) => String(c.id) !== sourceId).map((c) => (
-                  <option key={c.id} value={String(c.id)}>{c.name}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <label className="text-xs text-zinc-500">Mode</label>
-              <select
-                value={mode}
-                onChange={(e) => setMode(e.target.value as "suggest" | "execute")}
-                className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2"
-                disabled={running}
-              >
-                <option value="suggest">Suggest Only</option>
-                <option value="execute">Execute Pipeline</option>
-              </select>
-            </div>
-            <div className="p-3 rounded-xl bg-zinc-800/50 border border-zinc-800 flex flex-col">
-              <span className="text-xs text-zinc-500">Selected Model</span>
-              <span className="text-sm font-semibold text-zinc-300">Llama3 (Ollama)</span>
-            </div>
-            {sourceName && targetName && (
-              <div className="p-3 rounded-xl bg-zinc-800/50 border border-zinc-800 flex flex-col">
-                <span className="text-xs text-zinc-500">Target Action</span>
-                <span className="text-sm font-semibold text-zinc-300">{sourceName} → {targetName}</span>
-              </div>
-            )}
-          </div>
         </div>
-
-        {error && (
-          <div className="p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-xs">{error}</div>
-        )}
-
-        <div className="flex flex-col gap-2">
-          <button
-            onClick={handleRun}
-            disabled={running || !sourceId || !targetId}
-            className="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded-xl text-sm font-semibold text-white transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {running ? "Running..." : "Run Autopilot"}
-          </button>
-          {running && (
+        <nav className="flex items-center gap-1.5" aria-label="Autopilot sections">
+          {TABS.map((t) => (
             <button
-              onClick={handleStop}
-              className="w-full py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-semibold text-zinc-400 transition-all border border-transparent hover:border-zinc-600"
+              key={t.key}
+              type="button"
+              onClick={() => setTab(t.key)}
+              className={`px-3 py-1.5 text-xs font-semibold rounded-lg border ${
+                tab === t.key
+                  ? "bg-violet-500/15 text-violet-300 border-violet-500/30"
+                  : "bg-zinc-900 text-zinc-500 border-zinc-800 hover:text-zinc-300"
+              }`}
             >
-              Stop
+              {t.label}
+              {t.key === "approvals" && pendingCount > 0 && (
+                <span className="ml-1.5 px-1.5 py-0.5 text-[10px] rounded-full bg-violet-500/25 text-violet-200">
+                  {pendingCount}
+                </span>
+              )}
             </button>
-          )}
-          {runId && !running && (
-            <div className="text-xs text-zinc-600 text-center font-mono">run: {runId.slice(0, 8)}…</div>
-          )}
-        </div>
+          ))}
+        </nav>
       </div>
+
+      {banner && (
+        <div
+          role="status"
+          className={`px-4 py-2.5 rounded-xl border text-xs ${
+            banner.kind === "error"
+              ? "bg-red-500/10 border-red-500/20 text-red-300"
+              : banner.kind === "success"
+                ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-300"
+                : "bg-blue-500/10 border-blue-500/20 text-blue-300"
+          }`}
+        >
+          {banner.text}
+        </div>
+      )}
+
+      {tab === "console" && (
+        <RunConsole onQueuedForApproval={handleQueuedForApproval} />
+      )}
+      {tab === "approvals" && (
+        <ApprovalQueue
+          items={recs}
+          role={role}
+          busyId={busyId}
+          statusFilter={statusFilter}
+          onStatusFilter={handleStatusFilter}
+          onApprove={(id) => void decide(id, "approve")}
+          onReject={(id) => void decide(id, "reject")}
+          onModify={(id, payload) => void handleModify(id, payload)}
+          onEvaluate={() => void handleEvaluate()}
+          evaluating={evaluating}
+        />
+      )}
+      {tab === "policy" && (
+        <PolicyPanel
+          policies={policies}
+          role={role}
+          savingType={savingType}
+          onSave={(t, a, m) => void handleSavePolicy(t, a, m)}
+        />
+      )}
+      {tab === "actions" && <ActionLog items={actions} />}
     </div>
   );
 }

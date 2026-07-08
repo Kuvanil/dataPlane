@@ -79,6 +79,19 @@ def run_health_check_for_connection(self, connection_id: int):
             ConnectionService.update_health(db, connection_id, "down",
                                             result.error_message)
         db.commit()
+
+        if not result.success:
+            # Autopilot ≤10s NFR: an unhealthy result is a trigger — evaluate
+            # now instead of waiting for the beat sweep. Guarded so a dispatch
+            # failure never breaks the health check itself.
+            try:
+                from app.tasks.autopilot_tasks import evaluate_recommendations_task
+                evaluate_recommendations_task.delay()
+            except Exception as exc:
+                logger.warning(
+                    "autopilot evaluate dispatch after health check failed: %s", exc,
+                )
+
         return {
             "status": "completed",
             "connection_id": connection_id,
