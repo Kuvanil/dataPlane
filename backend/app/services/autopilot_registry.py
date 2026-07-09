@@ -42,6 +42,12 @@ class PayloadValidationError(Exception):
     """Raised when a recommendation payload fails registry validation."""
 
 
+# Reserved key an executor may set in its result dict: a zero-arg callable
+# the caller must invoke only AFTER its transaction commits (bugs/01). The
+# key is popped before the result is persisted as execution_result.
+DISPATCH_AFTER_COMMIT_KEY = "_dispatch_after_commit"
+
+
 @dataclass(frozen=True)
 class ActionSpec:
     action_type: str
@@ -133,7 +139,15 @@ def _exec_mapping_suggestions_refresh(db: Session, payload: Dict[str, Any],
 def _exec_migration_execute(db: Session, payload: Dict[str, Any],
                             actor: str) -> Dict[str, Any]:
     """Start a legacy autopilot run in execute mode (approval-gated only —
-    never auto; see auto_capable=False below)."""
+    never auto; see auto_capable=False below).
+
+    Transaction contract (bugs/01): executor callables NEVER commit the
+    caller's session — ``execute_recommendation`` owns the boundary. The
+    run row is flushed here and the Celery dispatch is returned under
+    ``DISPATCH_AFTER_COMMIT_KEY`` so the caller can fire it strictly after
+    the transaction lands (the worker writes FK'd AutopilotLog rows, so
+    dispatching before commit races; committing here breaks atomicity).
+    """
     import uuid
     from app.models.autopilot import AutopilotRun
     from app.models.connection import DBConnection
@@ -155,13 +169,15 @@ def _exec_migration_execute(db: Session, payload: Dict[str, Any],
         id=run_id, source_id=source_id, target_id=target_id,
         mode="execute", model=payload.get("model", "llama3"), status="running",
     ))
-    # Commit BEFORE dispatch: the worker writes AutopilotLog rows with an FK
-    # to this run row and may pick the task up before our transaction lands.
-    db.commit()
-    run_autopilot_task.delay(
-        run_id=run_id, source_id=source_id, target_id=target_id, mode="execute",
-    )
-    return {"run_id": run_id}
+    db.flush()
+
+    def _dispatch() -> None:
+        run_autopilot_task.delay(
+            run_id=run_id, source_id=source_id,
+            target_id=target_id, mode="execute",
+        )
+
+    return {"run_id": run_id, DISPATCH_AFTER_COMMIT_KEY: _dispatch}
 
 
 # ── Registry + prohibited set ─────────────────────────────────────────────

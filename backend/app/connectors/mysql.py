@@ -53,7 +53,7 @@ class MySQLConnector(BaseConnector):
     def get_table_schema(self, table_name: str) -> List[Dict[str, Any]]:
         conn = self.connect()
         cursor = conn.cursor()
-        cursor.execute(f"""
+        cursor.execute("""
             SELECT
                 c.COLUMN_NAME   AS name,
                 c.DATA_TYPE     AS type,

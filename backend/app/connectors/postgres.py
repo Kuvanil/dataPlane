@@ -55,11 +55,11 @@ class PostgresConnector(BaseConnector):
     def get_table_schema(self, table_name: str) -> List[Dict[str, Any]]:
         conn = self.connect()
         cursor = conn.cursor(cursor_factory=RealDictCursor)
-        cursor.execute(f"""
+        cursor.execute("""
             SELECT column_name as name, data_type as type, is_nullable = 'YES' as nullable
             FROM information_schema.columns
-            WHERE table_name = '{table_name}'
-        """)
+            WHERE table_name = %s
+        """, (table_name,))
         columns = cursor.fetchall()
 
         pk_cursor = conn.cursor()

@@ -188,3 +188,82 @@ def test_list_recommendations_filters(client_admin, pending_health_rec):
     assert r_all.json()["total"] == 1
     r_none = client_admin.get("/api/v1/autopilot/recommendations?status=executed")
     assert r_none.json()["total"] == 0
+
+
+# ── bugs/01: executor transaction atomicity ──────────────────────────────
+
+
+def test_bug01_migration_run_row_rolls_back_with_outer_transaction(
+    db, client_admin, two_conns, monkeypatch,
+):
+    """bugs/01: the executor must NOT commit the caller's session. If the
+    outer transaction fails after the executor returns, the AutopilotRun row
+    and the Celery dispatch must both be gone."""
+    from app.tasks import ai_tasks
+
+    dispatched = []
+    monkeypatch.setattr(
+        ai_tasks.run_autopilot_task, "delay",
+        lambda **kw: dispatched.append(kw),
+    )
+    src, tgt = two_conns
+    rec_id = client_admin.post(
+        "/api/v1/autopilot/run",
+        json={"source_id": src.id, "target_id": tgt.id, "mode": "execute"},
+    ).json()["recommendation_id"]
+    AutopilotService.approve(db, rec_id, actor="admin@test.local")
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("simulated post-executor failure")
+
+    monkeypatch.setattr(AutopilotService, "_log_action", staticmethod(_boom))
+    with pytest.raises(RuntimeError, match="simulated post-executor failure"):
+        AutopilotService.execute_recommendation(db, rec_id, auto=False)
+    db.rollback()
+
+    assert db.query(AutopilotRun).count() == 0  # flushed, never committed
+    assert dispatched == []  # dispatch is post-commit, so it never fired
+
+
+def test_bug01_dispatch_fires_only_after_commit_and_key_not_persisted(
+    db, client_admin, two_conns, monkeypatch,
+):
+    """bugs/01: happy path — dispatch happens post-commit and the reserved
+    callable key never leaks into the persisted execution_result."""
+    from app.models.autopilot import AutopilotRecommendation
+    from app.services.autopilot_registry import DISPATCH_AFTER_COMMIT_KEY
+    from app.tasks import ai_tasks
+
+    run_row_committed_at_dispatch = []
+
+    def _delay(**kw):
+        # By the time dispatch fires, the run row must be durably committed
+        # (visible to a different session, which is what the worker uses).
+        from sqlalchemy.orm import sessionmaker
+        other = sessionmaker(bind=db.get_bind())()
+        try:
+            found = other.query(AutopilotRun).filter(
+                AutopilotRun.id == kw["run_id"],
+            ).count()
+        finally:
+            other.close()
+        run_row_committed_at_dispatch.append(found)
+
+    monkeypatch.setattr(ai_tasks.run_autopilot_task, "delay", _delay)
+    src, tgt = two_conns
+    rec_id = client_admin.post(
+        "/api/v1/autopilot/run",
+        json={"source_id": src.id, "target_id": tgt.id, "mode": "execute"},
+    ).json()["recommendation_id"]
+    AutopilotService.approve(db, rec_id, actor="admin@test.local")
+    out = AutopilotService.execute_recommendation(db, rec_id, auto=False)
+
+    assert out["status"] == "executed"
+    assert run_row_committed_at_dispatch == [1]
+    rec = (
+        db.query(AutopilotRecommendation)
+        .filter(AutopilotRecommendation.id == rec_id)
+        .one()
+    )
+    assert DISPATCH_AFTER_COMMIT_KEY not in rec.execution_result
+    assert "run_id" in rec.execution_result

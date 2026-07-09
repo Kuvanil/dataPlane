@@ -152,3 +152,14 @@
   present; beat fired `autopilot-evaluate-recommendations` at :06 and the engine re-created a
   pending rec for the still-down connection (correct trigger-still-active behavior).
   **FR verdict after this epic: FR1–FR9 all implemented; #11 sign-off remains [!].**
+- 2026-07-09 — **Bug round: 5 validated findings, all fixed** (`bugs/` — per-bug resolution
+  notes in each file; generalized lessons + next-epic pre-flight checklist in `bugs/notes.md`).
+  Highlights: #01 (Medium) executor committed the caller's session mid-transaction — replaced
+  with a dispatch-after-commit callable (`DISPATCH_AFTER_COMMIT_KEY`), making rec status +
+  action log + run row + audit a single atomic commit, with post-commit dispatch failure
+  surfaced as `autopilot_dispatch_failed`; #02 engine sweep now skips (and counts) drafts that
+  fail registry validation instead of dying wholesale; #03 stale identity-map objects after
+  bulk `.update(synchronize_session=False)` — refresh/expire added at all four sites; #04
+  newest-drift-per-connection now computed in SQL (`group_by` + `max(id)` subquery); #05
+  structured `blocked_by` key in action-log detail + audit payloads. 6 regression tests
+  (one per bug + post-commit-durability check); suite 335/335.

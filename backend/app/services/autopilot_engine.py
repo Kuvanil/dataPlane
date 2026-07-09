@@ -20,6 +20,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -28,6 +29,11 @@ from app.models.connection import DBConnection
 from app.models.drift_event import DriftEvent
 from app.models.mapping import Mapping
 from app.services.audit_helper import record_audit
+from app.services.autopilot_registry import (
+    PayloadValidationError,
+    ProhibitedActionError,
+    UnknownActionError,
+)
 from app.services.autopilot_service import AutopilotService
 
 logger = logging.getLogger(__name__)
@@ -101,16 +107,23 @@ class AutopilotEngine:
     def _evaluate_schema_drift(db: Session) -> List[Dict[str, Any]]:
         drafts: List[Dict[str, Any]] = []
         since = _now() - timedelta(hours=settings.AUTOPILOT_DRIFT_LOOKBACK_HOURS)
+        # bugs/04: newest event per connection is computed in SQL — loading
+        # every event in the window into Python doesn't scale (the beat runs
+        # this every 2 minutes). max(id) is the newest: ids are insert-ordered.
+        latest_ids = (
+            db.query(func.max(DriftEvent.id).label("max_id"))
+            .filter(DriftEvent.detected_at >= since)
+            .group_by(DriftEvent.connection_id)
+            .subquery()
+        )
         events = (
             db.query(DriftEvent)
-            .filter(DriftEvent.detected_at >= since)
-            .order_by(DriftEvent.detected_at.desc())
+            .join(latest_ids, DriftEvent.id == latest_ids.c.max_id)
             .all()
         )
-        # Newest event per connection wins (older ones add nothing actionable).
-        latest_by_conn: Dict[int, DriftEvent] = {}
-        for ev in events:
-            latest_by_conn.setdefault(ev.connection_id, ev)
+        latest_by_conn: Dict[int, DriftEvent] = {
+            ev.connection_id: ev for ev in events
+        }
 
         for conn_id, ev in latest_by_conn.items():
             affected = (
@@ -215,16 +228,30 @@ class AutopilotEngine:
         )
         created_recs = []
         refreshed = 0
+        skipped = 0
         for d in drafts:
-            rec, created = AutopilotService.upsert_recommendation(
-                db,
-                action_type=d["action_type"],
-                subject=d["subject"],
-                payload=d["payload"],
-                rationale=d["rationale"],
-                confidence=d["confidence"],
-                created_by=actor,
-            )
+            # bugs/02: a draft that fails registry validation (evaluator and
+            # registry deployed out of sync) must not take down the whole
+            # sweep — skip it, keep the rest (fail-safe Reliability NFR).
+            try:
+                rec, created = AutopilotService.upsert_recommendation(
+                    db,
+                    action_type=d["action_type"],
+                    subject=d["subject"],
+                    payload=d["payload"],
+                    rationale=d["rationale"],
+                    confidence=d["confidence"],
+                    created_by=actor,
+                )
+            except (UnknownActionError, ProhibitedActionError,
+                    PayloadValidationError) as exc:
+                skipped += 1
+                logger.warning(
+                    "[pipeline] stage=autopilot_evaluate skipping draft "
+                    "action_type=%s subject=%s: %s",
+                    d.get("action_type"), d.get("subject"), exc,
+                )
+                continue
             if created:
                 created_recs.append(rec)
             else:
@@ -236,6 +263,7 @@ class AutopilotEngine:
             "created": len(created_recs),
             "refreshed": refreshed,
             "superseded": superseded,
+            "skipped": skipped,
         }
         if counts["created"] or counts["superseded"]:
             record_audit(db, "autopilot_evaluated", actor=actor, payload=counts)

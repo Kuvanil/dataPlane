@@ -52,11 +52,14 @@ class SQLiteConnector(BaseConnector):
     def get_table_schema(self, table_name: str) -> List[Dict[str, Any]]:
         conn = self.connect()
         cursor = conn.cursor()
-        cursor.execute(f"PRAGMA table_info({table_name})")
+        # PRAGMA can't take bound parameters — quote the identifier instead
+        # (connector_tasks/bugs #03 defect class: no raw interpolation in SQL).
+        quoted = '"' + table_name.replace('"', '""') + '"'
+        cursor.execute(f"PRAGMA table_info({quoted})")
         columns = cursor.fetchall()
 
         fk_cursor = conn.cursor()
-        fk_cursor.execute(f"PRAGMA foreign_key_list({table_name})")
+        fk_cursor.execute(f"PRAGMA foreign_key_list({quoted})")
         fks_by_column: Dict[str, List[Dict[str, str]]] = {}
         for r in fk_cursor.fetchall():
             fks_by_column.setdefault(r["from"], []).append({

@@ -91,10 +91,13 @@ class OracleConnector(BaseConnector):
         cur = conn.cursor()
 
         if self._sim_mode:
-            cur.execute(f"PRAGMA table_info({table_name})")
+            # PRAGMA can't take bound parameters — quote the identifier
+            # (same defect class as connector_tasks/bugs #03).
+            quoted = '"' + table_name.replace('"', '""') + '"'
+            cur.execute(f"PRAGMA table_info({quoted})")
             rows = cur.fetchall()
             fk_cur = conn.cursor()
-            fk_cur.execute(f"PRAGMA foreign_key_list({table_name})")
+            fk_cur.execute(f"PRAGMA foreign_key_list({quoted})")
             fks_by_column: Dict[str, List[Dict[str, str]]] = {}
             for r in fk_cur.fetchall():
                 # PRAGMA foreign_key_list columns: (id, seq, table, from, to, ...)

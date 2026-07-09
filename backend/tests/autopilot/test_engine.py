@@ -139,3 +139,62 @@ def _snapshot(db, connection_id: int) -> int:
     db.add(snap)
     db.flush()
     return snap.id
+
+
+# ── bugs/02 + bugs/04: sweep fail-safety + bounded drift query ────────────
+
+
+def test_bug02_unknown_draft_type_skipped_not_fatal(db, two_conns, monkeypatch):
+    """bugs/02: one evaluator emitting a non-registry action type must not
+    take down the whole sweep — valid drafts still land."""
+    src, _ = two_conns
+    src.health_status = "down"
+    db.commit()
+
+    monkeypatch.setattr(
+        AutopilotEngine, "_evaluate_schema_drift",
+        staticmethod(lambda db: [{
+            "action_type": "not_in_registry_yet",
+            "subject": "connection:999",
+            "payload": {"connection_id": 999},
+            "confidence": 50.0,
+            "rationale": {"summary": "stale evaluator", "evidence": [],
+                          "trigger": {}},
+        }]),
+    )
+
+    counts = AutopilotEngine.evaluate_all(db)
+    assert counts["created"] == 1   # the valid health rec
+    assert counts["skipped"] == 1   # the bogus draft, skipped not fatal
+    recs = _recs(db)
+    assert len(recs) == 1
+    assert recs[0].action_type == "connector_health_check"
+
+
+def test_bug04_only_newest_drift_event_per_connection_is_used(db, two_conns):
+    """bugs/04: latest-per-connection is computed in SQL; older events in the
+    window neither duplicate recs nor win over the newest event."""
+    src, tgt = two_conns
+    m = Mapping(name="MultiDrift", source_id=src.id, target_id=tgt.id,
+                status="draft")
+    db.add(m)
+    db.flush()
+    event_ids = []
+    for i in range(3):
+        ev = DriftEvent(
+            connection_id=src.id, snapshot_id=_snapshot(db, src.id),
+            tables_added=[f"t{i}"], tables_removed=[], columns_added=[],
+            columns_removed=[], type_changes=[],
+        )
+        db.add(ev)
+        db.flush()
+        event_ids.append(ev.id)
+    db.commit()
+
+    counts = AutopilotEngine.evaluate_all(db)
+    assert counts["created"] == 1
+    rec = _recs(db, "mapping_suggestions_refresh")[0]
+    newest = max(event_ids)
+    assert f"drift_event_id={newest}" in rec.rationale["evidence"]
+    for older in event_ids[:-1]:
+        assert f"drift_event_id={older}" not in rec.rationale["evidence"]

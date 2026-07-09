@@ -28,6 +28,7 @@ from app.services.audit_helper import record_audit
 from app.services.autopilot_registry import (
     ACTION_REGISTRY,
     ActionSpec,
+    DISPATCH_AFTER_COMMIT_KEY,
     PayloadValidationError,
     ProhibitedActionError,
     UnknownActionError,
@@ -208,6 +209,9 @@ class AutopilotService:
             )
         )
         if updated:
+            # Same identity-map staleness class as bugs/03: make the next
+            # attribute access re-read the row (within the caller's tx).
+            db.expire(rec)
             record_audit(
                 db, "autopilot_recommendation_superseded", actor=actor,
                 payload={"recommendation_id": rec.id,
@@ -462,9 +466,13 @@ class AutopilotService:
         """Auto path refused by limits/breaker/policy: return the rec to the
         approval queue instead of executing (fail-safe, never silently drop)."""
         started = _now()
+        # bugs/05: blocked_by is the structured, query-stable key; the
+        # human-readable reason may be reworded without breaking audits.
+        blocked_by = outcome.replace("blocked_", "")
         AutopilotService._log_action(
             db, rec=rec, action_type=rec.action_type, payload=rec.payload,
-            mode="auto", outcome=outcome, detail={"reason": reason},
+            mode="auto", outcome=outcome,
+            detail={"blocked_by": blocked_by, "reason": reason},
             reversibility_note=rec.reversibility_note,
             actor="autopilot-policy", started_at=started,
         )
@@ -479,9 +487,13 @@ class AutopilotService:
         record_audit(
             db, event_type, actor="autopilot-policy",
             payload={"recommendation_id": rec.id,
-                     "action_type": rec.action_type, "reason": reason},
+                     "action_type": rec.action_type,
+                     "blocked_by": blocked_by, "reason": reason},
         )
         db.commit()
+        # bugs/03: the bulk update above bypasses the identity map — refresh
+        # so same-session readers don't see a stale 'executing' object.
+        db.refresh(rec)
         logger.info("[pipeline] stage=autopilot_execute rec=%s demoted: %s",
                     rec.id, reason)
         return {"status": "demoted", "reason": reason}
@@ -534,7 +546,8 @@ class AutopilotService:
             AutopilotService._log_action(
                 db, rec=rec, action_type=rec.action_type, payload=rec.payload,
                 mode="auto" if auto else "approved",
-                outcome="blocked_prohibited", detail={"error": str(exc)},
+                outcome="blocked_prohibited",
+                detail={"blocked_by": "prohibited", "error": str(exc)},
                 reversibility_note=rec.reversibility_note,
                 actor=actor, started_at=started,
             )
@@ -547,9 +560,11 @@ class AutopilotService:
             record_audit(
                 db, "autopilot_action_blocked", actor=actor, status="failure",
                 payload={"recommendation_id": rec.id,
-                         "action_type": rec.action_type, "error": str(exc)},
+                         "action_type": rec.action_type,
+                         "blocked_by": "prohibited", "error": str(exc)},
             )
             db.commit()
+            db.refresh(rec)
             return {"status": "blocked_prohibited", "error": str(exc)}
 
         # Auto-only bounds (FR4/FR8): policy still auto, spec still
@@ -602,6 +617,7 @@ class AutopilotService:
 
         # Payload boundary check (modify path already validates; this covers
         # rows written before a registry change).
+        dispatch_after_commit = None
         try:
             payload = validate_payload(spec, rec.payload or {})
         except PayloadValidationError as exc:
@@ -610,6 +626,10 @@ class AutopilotService:
         else:
             try:
                 detail = spec.execute(db, payload, actor)
+                # bugs/01: executors never commit; side effects that must
+                # happen only after the transaction lands (Celery dispatch)
+                # come back as a callable under this reserved key.
+                dispatch_after_commit = detail.pop(DISPATCH_AFTER_COMMIT_KEY, None)
                 outcome = "success"
                 result = {"status": "executed", "detail": detail}
             except Exception as exc:  # clean failure — never crash the worker
@@ -641,6 +661,30 @@ class AutopilotService:
                      "mode": "auto" if auto else "approved", "outcome": outcome},
         )
         db.commit()
+        db.refresh(rec)  # bugs/03: bulk update bypassed the identity map
+
+        if dispatch_after_commit is not None:
+            # Strictly after commit: the worker's session can now see every
+            # row this transaction wrote (bugs/01). A dispatch failure here
+            # is surfaced, not swallowed — the action row already says
+            # success, so record the divergence explicitly.
+            try:
+                dispatch_after_commit()
+            except Exception as exc:
+                logger.error(
+                    "[pipeline] stage=autopilot_execute rec=%s post-commit "
+                    "dispatch failed: %s", rec.id, exc,
+                )
+                record_audit(
+                    db, "autopilot_dispatch_failed", actor=actor,
+                    status="failure",
+                    payload={"recommendation_id": rec.id,
+                             "action_type": rec.action_type,
+                             "error": str(exc)},
+                )
+                db.commit()
+                result = {"status": "executed_dispatch_failed",
+                          "error": str(exc)}
         return result
 
     # ── Auto-dispatch decision (AC1/AC2/AC4 entrypoint) ───────
