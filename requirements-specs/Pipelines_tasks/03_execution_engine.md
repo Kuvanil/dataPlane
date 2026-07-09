@@ -1,4 +1,4 @@
-# Task #3 — Execution engine (E-T-L) consuming published mappings (PIPE-T3)
+ed# Task #3 — Execution engine (E-T-L) consuming published mappings (PIPE-T3)
 
 **TRD reference:** FR3, FR5, AC1 ("Manual run"), Reliability NFR (idempotent re-runs, no
 partial-commit ambiguity), Risk table ("Partial loads / data corruption").
