@@ -22,6 +22,55 @@ describe("useWidgetData", () => {
     expect(result.current.data).toBeNull();
   });
 
+  it("passes an AbortSignal to the fetcher (bugs #02)", async () => {
+    const fetcher = vi.fn((signal: AbortSignal) => {
+      expect(signal).toBeInstanceOf(AbortSignal);
+      return Promise.resolve("ok");
+    });
+    const { result } = renderHook(() => useWidgetData(fetcher, []));
+    await waitFor(() => expect(result.current.data).toBe("ok"));
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts the in-flight request's signal when a newer call supersedes it (bugs #02)", async () => {
+    let firstSignal: AbortSignal | undefined;
+    let resolveFirst!: (v: string) => void;
+    const first = new Promise<string>((r) => (resolveFirst = r));
+    let call = 0;
+    const fetcher = vi.fn((signal: AbortSignal) => {
+      call += 1;
+      if (call === 1) {
+        firstSignal = signal;
+        return first;
+      }
+      return Promise.resolve("second");
+    });
+
+    const { result } = renderHook(() => useWidgetData(fetcher, []));
+    expect(firstSignal?.aborted).toBe(false);
+
+    await act(async () => {
+      await result.current.refetch(); // supersedes the in-flight first request
+    });
+    await waitFor(() => expect(result.current.data).toBe("second"));
+
+    expect(firstSignal?.aborted).toBe(true); // the superseded request was cancelled, not just ignored
+    resolveFirst("first"); // even if it resolves late, it's already aborted+dropped
+  });
+
+  it("aborts the in-flight request on unmount", async () => {
+    let capturedSignal: AbortSignal | undefined;
+    const fetcher = vi.fn(
+      (signal: AbortSignal) =>
+        new Promise<string>(() => {
+          capturedSignal = signal; // never resolves — simulates a slow request
+        }),
+    );
+    const { unmount } = renderHook(() => useWidgetData(fetcher, []));
+    unmount();
+    expect(capturedSignal?.aborted).toBe(true);
+  });
+
   it("recovers via refetch after an error", async () => {
     let fail = true;
     const fetcher = vi.fn(() =>

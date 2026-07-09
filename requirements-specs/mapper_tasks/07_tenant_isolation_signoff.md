@@ -1,5 +1,10 @@
 # Task #7 — Tenant isolation + Security/Compliance sign-off (cross-reference, not new)
 
+> **2026-07-09 update:** the app-wide decision this file has been waiting on is now drafted —
+> see `requirements-specs/tenant_isolation_tasks/00_architecture_decision.md` (row-level
+> `tenant_id` + Postgres RLS recommended, full table inventory, 5 open questions for
+> Security/Product). Still **[!] blocked** on their sign-off; nothing below has changed status.
+
 **TRD reference:** §9 Assumptions — "Mapping definitions are tenant-scoped and isolated." §12
 Definition of Done — "Security/compliance sign-off for regulated-environment constraints."
 

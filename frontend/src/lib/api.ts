@@ -20,35 +20,44 @@ function handle401() {
     // the browser navigates. If no handler is registered, fall back to the
     // original silent-redirect behavior so non-schema-mapper pages are
     // unaffected (mapper_tasks/05_session_timeout_autosave_loss.md).
-    // A throwing handler must not abort the token clear + redirect below —
-    // that would wedge the app on an expired token, re-401ing every call
-    // (review_schema_mapper_round2 #12).
-    try {
-      onUnauthorized?.();
-    } catch (err) {
-      console.error("unauthorized handler failed", err);
+    // Each handler is isolated in its own try/catch: one throwing must not
+    // stop the others from running, and must not abort the token clear +
+    // redirect below — that would wedge the app on an expired token,
+    // re-401ing every call (review_schema_mapper_round2 #12).
+    for (const fn of unauthorizedHandlers) {
+      try {
+        fn();
+      } catch (err) {
+        console.error("unauthorized handler failed", err);
+      }
     }
     localStorage.removeItem("dp_token");
     window.location.href = "/login";
   }
 }
 
-// Pluggable 401 callback so feature code (e.g. useMapping) can warn the
+// Pluggable 401 callbacks so feature code (e.g. useMapping) can warn the
 // user and attempt a best-effort flush before the token-clear + hard
-// navigation happens. Optional; pages that don't register a handler get
-// the original silent-redirect behavior unchanged.
-let onUnauthorized: (() => void) | null = null;
+// navigation happens. A Set (not a single slot) so multiple mounted
+// features can register concurrently without clobbering each other
+// (dashboard_tasks/bugs #03 — a single nullable slot let a second
+// registration silently overwrite, and a stale unmount's `null` clear
+// could wipe out a still-mounted feature's handler).
+const unauthorizedHandlers = new Set<() => void>();
 
-export function setUnauthorizedHandler(fn: (() => void) | null): void {
-  onUnauthorized = fn;
+/** Register a callback; returns an unregister function to call on cleanup. */
+export function addUnauthorizedHandler(fn: () => void): () => void {
+  unauthorizedHandlers.add(fn);
+  return () => unauthorizedHandlers.delete(fn);
 }
 
 export const api = {
   base: API_BASE,
 
-  async get<T>(path: string): Promise<T> {
+  async get<T>(path: string, options?: { signal?: AbortSignal }): Promise<T> {
     const res = await fetch(`${API_BASE}${path}`, {
       headers: authHeaders(false),
+      signal: options?.signal,
     });
     if (res.status === 401) { handle401(); throw new ApiError(401, "Unauthorized"); }
     if (!res.ok) {

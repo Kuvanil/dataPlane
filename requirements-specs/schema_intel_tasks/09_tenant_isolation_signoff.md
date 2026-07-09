@@ -1,5 +1,10 @@
 # Task #9 — Tenant isolation (cross-reference, not new)
 
+> **2026-07-09 update:** the app-wide decision this file has been waiting on is now drafted —
+> see `requirements-specs/tenant_isolation_tasks/00_architecture_decision.md` (row-level
+> `tenant_id` + Postgres RLS recommended, full table inventory, 5 open questions for
+> Security/Product). Still **[!] blocked** on their sign-off; nothing below has changed status.
+
 **TRD reference:** §9 Assumptions (implied — the TRD doesn't mention tenancy explicitly, but every
 other epic in this codebase has hit the same gap). §12 Definition of Done — "Security sign-off on
 PII handling" overlaps with this concern for the catalog/classification tables this epic creates.

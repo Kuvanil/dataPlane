@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { FixedSizeList, type ListOnScrollProps } from "react-window";
 import { classNames } from "../lib/format";
 import type {
   FieldMapping,
@@ -80,6 +81,19 @@ export default function Canvas({
   // (mapping_service.add_edge) rejects any other kind.
   const [selectedSourceIds, setSelectedSourceIds] = useState<string[]>([]);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  // mapper_tasks #4: each panel is a react-window FixedSizeList once its
+  // content exceeds the bounded viewport height (below), so it scrolls
+  // internally rather than growing the page. The connector overlay draws
+  // absolute-positioned SVG lines between source/target rows, so it needs
+  // each panel's current scroll offset to keep lines aligned with the rows
+  // actually visible — without this, virtualizing would silently misalign
+  // (or draw ghost) connector lines the moment either panel scrolls.
+  const [sourceScrollTop, setSourceScrollTop] = useState(0);
+  const [targetScrollTop, setTargetScrollTop] = useState(0);
+  // mapper_tasks #02: a visually-hidden live region announces staging and
+  // edge-creation events for screen-reader users, mirroring the visual
+  // "N selected" pill / connector-line feedback sighted users already get.
+  const [liveMessage, setLiveMessage] = useState("");
 
   // Load mapping → resolve source/target connection ids, then schemas.
   useEffect(() => {
@@ -170,7 +184,14 @@ export default function Canvas({
 
   const rowHeight = 36;
   const maxRows = Math.max(sourceColumns.length, targetColumns.length);
-  const svgHeight = Math.max(280, maxRows * rowHeight + 24);
+  // Shared by both virtualized panels AND the connector overlay so they
+  // stay pixel-aligned: below this height, a panel's content fits without
+  // scrolling (unvirtualized in effect — react-window only windows rows
+  // outside the current viewport) and the overlay draws every connector at
+  // its natural position, unchanged from before #04. Above it, panels
+  // scroll internally and the overlay clips lines to what's on-screen
+  // (below) instead of drawing to a now-offscreen row.
+  const panelHeight = Math.max(280, Math.min(560, maxRows * rowHeight + 24));
 
   // O(1) id -> ColumnNode lookup, mirroring the sourceMappedKeys/
   // targetEdgeByColumn Map/Set pattern already used above instead of
@@ -204,6 +225,9 @@ export default function Canvas({
         },
         [{ table: source.table, column: source.column, type: source.type, nullable: source.nullable }],
         { kind: "direct" },
+      );
+      setLiveMessage(
+        `Connected ${source.table}.${source.column} to ${target.table}.${target.column}.`,
       );
     } catch {
       // addEdge already toasted the error.
@@ -258,6 +282,8 @@ export default function Canvas({
       );
       setSelectedSourceIds([]);
       if (edge && sources.length > 1) onSelectEdge(edge.id);
+      const sourceLabel = sources.map((s) => `${s.table}.${s.column}`).join(", ");
+      setLiveMessage(`Connected ${sourceLabel} to ${target.table}.${target.column}.`);
     } catch {
       // addEdge already toasted the error.
     } finally {
@@ -267,9 +293,18 @@ export default function Canvas({
 
   const toggleSourceSelection = (id: string) => {
     if (!canEdit) return;
-    setSelectedSourceIds((prev) =>
-      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id],
-    );
+    setSelectedSourceIds((prev) => {
+      const col = sourceColumnsById.get(id);
+      const label = col ? `${col.table}.${col.column}` : id;
+      if (prev.includes(id)) {
+        const next = prev.filter((x) => x !== id);
+        setLiveMessage(`${label} unstaged. ${next.length} source${next.length === 1 ? "" : "s"} staged.`);
+        return next;
+      }
+      const next = [...prev, id];
+      setLiveMessage(`${label} staged as source ${next.length}. ${next.length} source${next.length === 1 ? "" : "s"} staged.`);
+      return next;
+    });
   };
 
   // O(1) row-level "is this staged" checks, but carrying the staging ORDER
@@ -326,11 +361,16 @@ export default function Canvas({
             onDragEnd={() => setDraggingSourceId(null)}
             onToggleSelect={canEdit ? toggleSourceSelection : undefined}
             onClearSelection={clearSelection}
+            panelHeight={panelHeight}
+            rowHeight={rowHeight}
+            onScroll={setSourceScrollTop}
           />
           <ConnectorOverlay
-            height={svgHeight}
+            height={panelHeight}
             connectors={connectors}
             rowHeight={rowHeight}
+            sourceScrollTop={sourceScrollTop}
+            targetScrollTop={targetScrollTop}
             nodeIndex={(id) => {
               const idx = sourceColumns.findIndex((n) => n.id === id);
               if (idx >= 0) return { row: idx, side: "source" as const };
@@ -355,9 +395,18 @@ export default function Canvas({
             onDrop={onDrop}
             onTargetClick={canEdit ? connectStagedSources : undefined}
             stagedCount={selectedSourceIds.length}
+            panelHeight={panelHeight}
+            rowHeight={rowHeight}
+            onScroll={setTargetScrollTop}
           />
         </div>
       )}
+      {/* Accessibility live region (mapper_tasks #02): announces staging
+          and edge-creation events for screen-reader users, mirroring the
+          "N selected" pill / connector-line feedback sighted users get. */}
+      <div className={classNames("sr-only")} role="status" aria-live="polite">
+        {liveMessage}
+      </div>
       {/* Legend for the row glyphs (key, NOT-NULL star, staging badges) —
           previously unexplained anywhere (review_schema_mapper_round2 #10). */}
       {!loading && !error && (
@@ -417,6 +466,9 @@ function SchemaPanel({
   onClearSelection,
   onTargetClick,
   stagedCount,
+  panelHeight,
+  rowHeight,
+  onScroll,
 }: {
   title: string;
   connId: number | null;
@@ -435,6 +487,12 @@ function SchemaPanel({
   onClearSelection?: () => void;
   onTargetClick?: (n: ColumnNode) => void;
   stagedCount?: number;
+  // mapper_tasks #4: bounded viewport height + row height for the
+  // react-window list; onScroll reports scrollTop up to Canvas so the
+  // connector overlay can stay aligned with whatever rows are on screen.
+  panelHeight: number;
+  rowHeight: number;
+  onScroll: (scrollTop: number) => void;
 }) {
   const accent = side === "source" ? "text-blue-400" : "text-indigo-400";
   // Tracks whether a native HTML5 drag just completed, so the onClick that
@@ -483,23 +541,64 @@ function SchemaPanel({
             No columns.
           </div>
         ) : (
-          nodes.map((n) => {
-            const isMapped = mappedKeys.has(`${n.table}.${n.column}`);
-            const isDragging = draggingId === n.id;
-            const isHover = hoverId === n.id;
-            const stagedPos = selectedOrder?.get(n.id);
-            const isSelected = stagedPos !== undefined;
-            // Mapped columns can't participate in staging: a mapped source
-            // always ends in the backend's many-to-many 422, a mapped target
-            // in its double-mapped 409 — don't offer a click the server is
-            // guaranteed to reject (review_schema_mapper_round2 #7).
-            const stageableSource =
-              side === "source" && !!onToggleSelect && !isMapped;
-            const clickableTarget = targetReadyForClick && !isMapped;
-            return (
+          // mapper_tasks #4: virtualized so a 1,000-column schema mounts
+          // only the rows currently in view instead of the whole list.
+          // Below panelHeight's cap (Canvas's panelHeight computation) this
+          // renders every row anyway — small/medium schemas are pixel-
+          // identical to the pre-virtualization layout, nothing changes
+          // until a panel would have exceeded the bounded viewport height.
+          <FixedSizeList
+            height={panelHeight}
+            width="100%"
+            itemCount={nodes.length}
+            itemSize={rowHeight}
+            onScroll={(p: ListOnScrollProps) => onScroll(p.scrollOffset)}
+          >
+            {({ index, style }) => {
+              const n = nodes[index];
+              const isMapped = mappedKeys.has(`${n.table}.${n.column}`);
+              const isDragging = draggingId === n.id;
+              const isHover = hoverId === n.id;
+              const stagedPos = selectedOrder?.get(n.id);
+              const isSelected = stagedPos !== undefined;
+              // Mapped columns can't participate in staging: a mapped source
+              // always ends in the backend's many-to-many 422, a mapped target
+              // in its double-mapped 409 — don't offer a click the server is
+              // guaranteed to reject (review_schema_mapper_round2 #7).
+              const stageableSource =
+                side === "source" && !!onToggleSelect && !isMapped;
+              const clickableTarget = targetReadyForClick && !isMapped;
+              // mapper_tasks #02: exactly the rows with real mouse behavior
+              // (stage / connect) get a keyboard equivalent — matching the
+              // WCAG requirement that all functionality reachable by mouse
+              // is reachable by keyboard, without inventing tab stops for
+              // rows that were never clickable in the first place.
+              const isActionable = stageableSource || clickableTarget;
+              const activate = () => {
+                if (stageableSource) {
+                  if (justDraggedRef.current) return;
+                  onToggleSelect!(n.id);
+                }
+                if (clickableTarget && onTargetClick) {
+                  onTargetClick(n);
+                }
+              };
+              const ariaLabel = stageableSource
+                ? isSelected
+                  ? `${n.table}.${n.column}, staged as source ${stagedPos}. Press Enter to unstage.`
+                  : `${n.table}.${n.column}. Press Enter to stage as a source column.`
+                : clickableTarget
+                  ? `Connect ${stagedCount} staged source column${stagedCount === 1 ? "" : "s"} to ${n.table}.${n.column}.`
+                  : undefined;
+              return (
               <div
                 key={n.id}
+                style={style}
                 draggable={!!onDragStart}
+                tabIndex={isActionable ? 0 : undefined}
+                role={isActionable ? "button" : undefined}
+                aria-pressed={stageableSource ? isSelected : undefined}
+                aria-label={ariaLabel}
                 onDragStart={(e) => {
                   if (onDragStart) {
                     e.dataTransfer.effectAllowed = "link";
@@ -529,17 +628,12 @@ function SchemaPanel({
                     onDrop(n);
                   }
                 }}
-                onClick={() => {
-                  // Source: toggle into the multi-source staging set.
-                  if (stageableSource) {
-                    // Avoid hijacking a click that just finished a drag.
-                    if (justDraggedRef.current) return;
-                    onToggleSelect!(n.id);
-                  }
-                  // Target: if sources are staged, a click creates the
-                  // multi-source edge.
-                  if (clickableTarget && onTargetClick) {
-                    onTargetClick(n);
+                onClick={activate}
+                onKeyDown={(e) => {
+                  if (!isActionable) return;
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    activate();
                   }
                 }}
                 title={
@@ -562,8 +656,8 @@ function SchemaPanel({
                   clickableTarget ? "cursor-crosshair" : "",
                   // While staging, mapped targets are visibly not an option.
                   targetReadyForClick && isMapped && "opacity-40 cursor-not-allowed",
+                  isActionable && "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400",
                 )}
-                style={{ minHeight: 32 }}
               >
                 <span className="flex items-center gap-1.5 min-w-0">
                   {n.primary_key && (
@@ -607,8 +701,9 @@ function SchemaPanel({
                   )}
                 </span>
               </div>
-            );
-          })
+              );
+            }}
+          </FixedSizeList>
         )}
       </div>
     </div>
@@ -619,6 +714,8 @@ function ConnectorOverlay({
   height,
   connectors,
   rowHeight,
+  sourceScrollTop,
+  targetScrollTop,
   nodeIndex,
   selectedEdgeId,
   onSelectEdge,
@@ -626,6 +723,8 @@ function ConnectorOverlay({
   height: number;
   connectors: ConnectorView[];
   rowHeight: number;
+  sourceScrollTop: number;
+  targetScrollTop: number;
   nodeIndex: (id: string) => { row: number; side: "source" | "target" } | null;
   selectedEdgeId: number | null;
   onSelectEdge: (id: number | null) => void;
@@ -641,8 +740,15 @@ function ConnectorOverlay({
           const sIdx = nodeIndex(c.sourceId);
           const tIdx = nodeIndex(c.targetId);
           if (!sIdx || !tIdx) return null;
-          const sy = sIdx.row * rowHeight + 16;
-          const ty = tIdx.row * rowHeight + 16;
+          const sy = sIdx.row * rowHeight + 16 - sourceScrollTop;
+          const ty = tIdx.row * rowHeight + 16 - targetScrollTop;
+          // mapper_tasks #4: once a panel is virtualized+scrolled, a
+          // connector whose endpoint has scrolled out of view would
+          // otherwise draw a line to a phantom position outside the
+          // visible rows. Hiding it (rather than clamping/drawing anyway)
+          // is the only option that never misrepresents which columns are
+          // actually connected on screen right now.
+          if (sy < 0 || sy > height || ty < 0 || ty > height) return null;
           const isAi = c.origin === "ai_accepted";
           const isSelected = c.edgeId === selectedEdgeId;
           const stroke = isSelected

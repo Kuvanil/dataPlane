@@ -2,6 +2,7 @@
 
 > Validated against `TRD_DataPlane_Schema_Intel.md` (FR1–FR8) and implementation code as of commit `d2ea82b`.
 > Status: All backend tests passing. 2 of 8 FRs done (FR1, FR6); 3 partial; 3 not started.
+> 2026-07-09: #05 reviewed and explicitly deferred (decision below) — not implemented this pass.
 
 ## Bug Summary
 
@@ -11,13 +12,24 @@
 | 02 | `oracle.py` | **MEDIUM** | Fixed | Hardcoded `primary_key: False` in Oracle connector real branch — PKs not recognized |
 | 03 | `connectors/*.py` | **LOW** | Fixed | FK discovery missing from all 5 connectors — added via catalog queries/PRAGMA |
 | 04 | Profiling | **HIGH** | Not started | Column profiling (FR2) — zero code exists anywhere |
-| 05 | Classification | **MEDIUM** | [?] Open | Classification (FR3) has no confidence scoring, no value-based detection |
+| 05 | Classification | **MEDIUM** | **Deferred 2026-07-09** | Classification (FR3) has no confidence scoring, no value-based detection |
 | 06 | Catalog search | **MEDIUM** | Not started | Catalog search API (FR4) — no `q`/filter params on GET endpoint |
 | 07 | Catalog UI | **MEDIUM** | Not started | Catalog UI + classification badges (FR5) |
 | 08 | Manual override | **LOW** | Not started | Manual classification override + audit (FR5/FR8) |
 | 09 | Profiling sample bounds | **MEDIUM** | Not started | Bounded-sample profiling (FR7) — depends entirely on FR2 |
 | 10 | PII sign-off | **HIGH** | [!] Blocked | PII data-safety sign-off — needs Security decision on sample minimization |
-| 11 | Tenant isolation | **HIGH** | [!] Blocked | Tenant isolation — app-wide cross-reference |
+| 11 | Tenant isolation | **HIGH** | [!] Blocked | Tenant isolation — app-wide cross-reference; architecture decision + epic spec drafted 2026-07-09, see `requirements-specs/tenant_isolation_tasks/INDEX.md` |
+
+## #05 disposition (2026-07-09)
+
+Presented three options: (a) rule-based confidence scoring now (no data sampling — score by
+signal strength: exact name match = high, substring match = medium, type-only = low), (b)
+value-based detection (regex against sampled data — faithful to the TRD's AC2 example, but
+requires #04/profiling first), (c) defer entirely until #04 lands. **Decision: defer entirely.**
+Rationale given: real confidence scoring per the TRD's intent needs sampled data anyway, so
+shipping a rule-based interim score now would be a second classification path to maintain and
+then retire once profiling exists — not worth the churn. No code changed. Revisit #05 as part of
+building #04 (profiling), not before.
 
 ## FR Coverage Verification
 

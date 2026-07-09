@@ -64,7 +64,12 @@ Noted here so the process gap is visible, not swept under the rug.
 
 **Resolution:** **flag to Security/Compliance** for the TRD Definition-of-Done sign-off item. Do NOT auto-implement in this branch. If product decides to add `tenant_id` app-wide, this work follows in a separate epic.
 
-**Status:** pending security review.
+**Status:** pending security review. **2026-07-09 update:** the app-wide decision is now
+drafted at `requirements-specs/tenant_isolation_tasks/00_architecture_decision.md` (row-level
+`tenant_id` + Postgres RLS recommended, full table inventory, 5 open questions for
+Security/Product). This is the first of the five later cross-references (mapper #7, schema_intel
+#9, connector #10, dashboard #9, autopilot #11) to actually propose a model rather than restate
+the finding — still pending sign-off.
 
 ---
 

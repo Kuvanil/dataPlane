@@ -1,5 +1,11 @@
 # Task #9 — Tenant Isolation Sign-Off (Dashboard)
 
+> **2026-07-09 update:** the app-wide decision this file has been waiting on is now drafted —
+> see `requirements-specs/tenant_isolation_tasks/00_architecture_decision.md` (row-level
+> `tenant_id` + Postgres RLS recommended; explicitly recommends big-bang rollout over
+> incremental, addressing the "mixed isolation" risk this file flags below). Still **[!] blocked**
+> on Security/Product sign-off; nothing below has changed status.
+
 **TRD reference:** §9 Assumption (tenant isolation), §12 Definition of Done.
 
 **Current state:** No tenant isolation exists anywhere in the codebase. This is a repo-wide gap, not specific to the Dashboard module. The Dashboard aggregation API (Task #1) queries all data without any tenant filter.

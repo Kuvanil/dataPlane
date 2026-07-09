@@ -56,19 +56,19 @@ export default function DashboardPage() {
   // Unified aggregation API (dashboard_tasks #1) — KPI tiles + feed in one
   // payload, re-fetched whenever the time range changes (#6).
   const summary = useWidgetData<DashboardSummary>(
-    () => api.get<DashboardSummary>(`/api/v1/dashboard/summary?range=${range}`),
+    (signal) => api.get<DashboardSummary>(`/api/v1/dashboard/summary?range=${range}`, { signal }),
     [range],
   );
 
   // Drift alert details and connection health are their own isolated
   // widgets (dashboard_tasks #3) — each fails alone, not the whole page.
   const drift = useWidgetData<DriftAlert[]>(
-    () => api.get<DriftAlert[]>("/api/v1/audit/?event_type=schema_drift_detected&page_size=5"),
+    (signal) => api.get<DriftAlert[]>("/api/v1/audit/?event_type=schema_drift_detected&page_size=5", { signal }),
     [],
   );
 
   const connectors = useWidgetData<Connector[]>(
-    () => api.get<Connector[]>("/api/v1/connectors/"),
+    (signal) => api.get<Connector[]>("/api/v1/connectors/", { signal }),
     [],
   );
   const [testResults, setTestResults] = useState<Record<number, TestStatus>>({});

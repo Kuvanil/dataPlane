@@ -1,5 +1,11 @@
 # Task #10 — Tenant isolation (cross-reference, not new)
 
+> **2026-07-09 update:** the app-wide decision this file has been waiting on is now drafted —
+> see `requirements-specs/tenant_isolation_tasks/00_architecture_decision.md` (row-level
+> `tenant_id` + Postgres RLS recommended; explicitly addresses `DBConnection`'s upstream role and
+> the `Pipeline.tenant_id` placeholder column). Still **[!] blocked** on Security/Product
+> sign-off; nothing below has changed status.
+
 **TRD reference:** §9 Assumptions (implied — not mentioned explicitly, but every other epic in
 this codebase has hit the same gap). §12 Definition of Done overlaps with this for `DBConnection`,
 the most upstream table in the whole schema.

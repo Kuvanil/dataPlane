@@ -16,6 +16,9 @@ Not auto-implementable by definition. Items needing a human decision/sign-off:
 4. **Tenant isolation** — same open question as `mapper_tasks/INDEX.md` #7 and
    `connector_tasks/10_tenant_isolation_signoff.md`: there is no tenant scoping anywhere in the
    product yet; Autopilot inherits that. Cross-reference, not a new gap introduced here.
+   **2026-07-09:** the app-wide decision is now drafted at
+   `requirements-specs/tenant_isolation_tasks/00_architecture_decision.md` (row-level
+   `tenant_id` + Postgres RLS recommended). Still blocked on Security/Product sign-off.
 5. **Data-driven prompt injection** — mitigated by design decision 2 (no LLM on the decision
    path). If LLM rationale enrichment is ever added, this needs re-review.
 

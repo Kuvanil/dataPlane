@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, setUnauthorizedHandler } from "@/lib/api";
+import { addUnauthorizedHandler, api, ApiError } from "@/lib/api";
 import type {
   AISuggestion,
   EdgeTransformationUpdate,
@@ -199,13 +199,13 @@ export function useMapping(): UseMappingResult {
         );
       }
     };
-    setUnauthorizedHandler(onUnauthorized);
+    const removeUnauthorizedHandler = addUnauthorizedHandler(onUnauthorized);
 
     return () => {
       if (flushTimerRef.current) clearInterval(flushTimerRef.current);
       document.removeEventListener("visibilitychange", onVis);
       window.removeEventListener("beforeunload", onBeforeUnload);
-      setUnauthorizedHandler(null);
+      removeUnauthorizedHandler();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
