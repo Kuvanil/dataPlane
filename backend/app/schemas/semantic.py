@@ -12,7 +12,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ── Request bodies ────────────────────────────────────────────────
@@ -34,6 +34,9 @@ class SemanticDimensionCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
     semantic_type: str = Field(default="categorical", max_length=64)
+    # Task #4: optional physical mapping at create time. Validation of
+    # the catalog column is done in the service layer.
+    catalog_column_id: Optional[int] = Field(default=None, ge=1)
 
 
 class SemanticMeasureCreate(BaseModel):
@@ -41,6 +44,7 @@ class SemanticMeasureCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
     description: Optional[str] = None
     default_aggregation: str = Field(default="sum", max_length=64)
+    catalog_column_id: Optional[int] = Field(default=None, ge=1)
 
 
 class SemanticMetricCreate(BaseModel):
@@ -87,6 +91,7 @@ class SemanticDimensionRead(BaseModel):
     name: str
     description: Optional[str] = None
     semantic_type: str
+    catalog_column_id: Optional[int] = None
 
 
 class SemanticMeasureRead(BaseModel):
@@ -97,6 +102,7 @@ class SemanticMeasureRead(BaseModel):
     name: str
     description: Optional[str] = None
     default_aggregation: str
+    catalog_column_id: Optional[int] = None
 
 
 class SemanticMetricRead(BaseModel):

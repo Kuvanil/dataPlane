@@ -31,6 +31,13 @@ from app.models.semantic import (
     SemanticMeasure,
     SemanticMetricDefinition,
 )
+from app.models.semantic import (
+    SemanticDimension,
+    SemanticEntity,
+    SemanticLineage,
+    SemanticMeasure,
+    SemanticMetricDefinition,
+)
 from app.services.audit_helper import record_audit
 
 logger = logging.getLogger(__name__)
@@ -87,6 +94,7 @@ class SemanticCRUD:
         name: str,
         semantic_type: str = "categorical",
         description: Optional[str] = None,
+        catalog_column_id: Optional[int] = None,
         actor: str = "system",
     ) -> SemanticDimension:
         # Verify the entity exists (404 is clearer than a FK violation).
@@ -94,9 +102,18 @@ class SemanticCRUD:
             raise HTTPException(
                 status_code=404, detail=f"entity {entity_id} not found",
             )
+        # Task #4: validate the catalog column exists before binding it.
+        if catalog_column_id is not None and not db.query(CatalogColumn).filter(
+            CatalogColumn.id == catalog_column_id,
+        ).first():
+            raise HTTPException(
+                status_code=404,
+                detail=f"catalog column {catalog_column_id} not found",
+            )
         d = SemanticDimension(
             entity_id=entity_id, name=name,
             semantic_type=semantic_type, description=description,
+            catalog_column_id=catalog_column_id,
         )
         db.add(d)
         db.flush()
@@ -105,6 +122,7 @@ class SemanticCRUD:
             payload={
                 "dimension_id": d.id, "entity_id": entity_id, "name": name,
                 "semantic_type": semantic_type,
+                "catalog_column_id": catalog_column_id,
             },
         )
         db.commit()
@@ -121,15 +139,24 @@ class SemanticCRUD:
         name: str,
         default_aggregation: str = "sum",
         description: Optional[str] = None,
+        catalog_column_id: Optional[int] = None,
         actor: str = "system",
     ) -> SemanticMeasure:
         if not db.query(SemanticEntity).filter(SemanticEntity.id == entity_id).first():
             raise HTTPException(
                 status_code=404, detail=f"entity {entity_id} not found",
             )
+        if catalog_column_id is not None and not db.query(CatalogColumn).filter(
+            CatalogColumn.id == catalog_column_id,
+        ).first():
+            raise HTTPException(
+                status_code=404,
+                detail=f"catalog column {catalog_column_id} not found",
+            )
         m = SemanticMeasure(
             entity_id=entity_id, name=name,
             default_aggregation=default_aggregation, description=description,
+            catalog_column_id=catalog_column_id,
         )
         db.add(m)
         db.flush()
@@ -138,6 +165,7 @@ class SemanticCRUD:
             payload={
                 "measure_id": m.id, "entity_id": entity_id, "name": name,
                 "default_aggregation": default_aggregation,
+                "catalog_column_id": catalog_column_id,
             },
         )
         db.commit()

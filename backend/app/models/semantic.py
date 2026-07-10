@@ -80,8 +80,18 @@ class SemanticDimension(Base):
     # that's eligible for time_grain. Free-form for now; tighten once
     # Task #6 designs the language.
     semantic_type = Column(String, nullable=False, default="categorical")
+    # Physical mapping (Task #4). Nullable so a dimension can exist as a
+    # pure logical definition before it's bound to a column. The catalog
+    # column is the Schema Intel anchor that the resolution engine walks
+    # through when generating SQL.
+    catalog_column_id = Column(
+        Integer,
+        ForeignKey("catalog_columns.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     entity = relationship("SemanticEntity", back_populates="dimensions")
+    catalog_column_rel = relationship("CatalogColumn", foreign_keys=[catalog_column_id])
 
 
 class SemanticMeasure(Base):
@@ -102,8 +112,16 @@ class SemanticMeasure(Base):
     # is the authoritative validator. Stored as a string (not an enum)
     # so adding a new aggregation doesn't require a schema migration.
     default_aggregation = Column(String, nullable=False, default="sum")
+    # Physical mapping (Task #4). Nullable so a measure can exist as a
+    # pure logical definition before it's bound to a column.
+    catalog_column_id = Column(
+        Integer,
+        ForeignKey("catalog_columns.id", ondelete="SET NULL"),
+        nullable=True,
+    )
 
     entity = relationship("SemanticEntity", back_populates="measures")
+    catalog_column_rel = relationship("CatalogColumn", foreign_keys=[catalog_column_id])
 
 
 # ── MetricDefinition (versioned) ──────────────────────────────────

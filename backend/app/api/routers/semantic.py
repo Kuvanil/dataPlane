@@ -93,6 +93,7 @@ def create_dimension(
     return SemanticCRUD.create_dimension(
         db, entity_id=req.entity_id, name=req.name,
         semantic_type=req.semantic_type, description=req.description,
+        catalog_column_id=req.catalog_column_id,
         actor=user.email,
     )
 
@@ -108,7 +109,9 @@ def create_measure(
     return SemanticCRUD.create_measure(
         db, entity_id=req.entity_id, name=req.name,
         default_aggregation=req.default_aggregation,
-        description=req.description, actor=user.email,
+        description=req.description,
+        catalog_column_id=req.catalog_column_id,
+        actor=user.email,
     )
 
 
