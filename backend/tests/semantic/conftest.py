@@ -76,7 +76,16 @@ from sqlalchemy.orm import sessionmaker  # noqa: E402
 
 @pytest.fixture()
 def engine():
-    eng = create_engine("sqlite:///:memory:")
+    # StaticPool + check_same_thread=False lets the in-memory SQLite engine
+    # be shared safely across threads (FastAPI's TestClient runs request
+    # handlers on an asyncio thread pool). This is the same fix used by the
+    # Pipelines test suite (mapper_tasks/#5 conftest).
+    from sqlalchemy.pool import StaticPool
+    eng = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(eng)
     try:
         yield eng
