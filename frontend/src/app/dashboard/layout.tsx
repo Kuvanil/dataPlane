@@ -13,6 +13,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { id: "visualize", label: "Visualize", icon: "🌐", href: "/dashboard/visualize" },
     { id: "schema", label: "Schema Intel", icon: "🧠", href: "/dashboard/schema" },
     { id: "schema-mapper", label: "Schema Mapper", icon: "🗺️", href: "/dashboard/schema-mapper" },
+    { id: "semantic", label: "Semantic / Metrics", icon: "📐", href: "/dashboard/semantic" },
     { id: "query-studio", label: "Query Studio", icon: "💬", href: "/dashboard/query-studio" },
     { id: "askdata", label: "AskData Bot", icon: "🤖", href: "/dashboard/askdata" },
     { id: "pipelines", label: "Pipelines", icon: "🔗", href: "/dashboard/pipelines" },
