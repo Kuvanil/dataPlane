@@ -20,7 +20,7 @@ Tasks deferred:
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.orm import Session
 
 from app.api.deps import require_role
@@ -48,8 +48,9 @@ from app.schemas.semantic import (
     SemanticMetricRead,
     SemanticMetricReadWithRelations,
     SemanticMetricUpdate,
+    SemanticLineageRead,
 )
-from app.services.semantic_service import SemanticCRUD
+from app.services.semantic_service import SemanticCRUD  # noqa: F401
 
 
 logger = logging.getLogger(__name__)
@@ -253,4 +254,49 @@ def add_lineage(
         db, metric_id=req.metric_id,
         catalog_column_id=req.catalog_column_id, role=req.role,
         actor=user.email,
+    )
+
+
+# ── Task #5: Query resolution (SEM-T3) ──────────────────────────
+# POST /semantic/resolve resolves a published metric version into a
+# parameterized SQL query against the physical schema. Accepts caller
+# dimensions + filters at query time (FR5).
+#
+# Drafts are rejected -- only published versions can be resolved
+# (AC2 "consistent resolution"). The response contains the rendered
+# SQL plus the placeholder list so callers can bind against their
+# preferred driver.
+
+@router.post("/resolve", response_model=ResolutionResponse)
+def resolve_metric(
+    req: ResolutionRequest,
+    db: Session = Depends(get_db),
+    _user: User = Depends(get_current_user),
+):
+    from app.services.semantic_resolver import (
+        ResolutionError as _ResolutionError,
+        resolve as _resolve,
+    )
+    try:
+        sql, placeholders = _resolve(
+            db, req.metric_id,
+            dimensions=req.dimensions or None,
+            filters=req.filters or None,
+        )
+    except _ResolutionError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    # Surface the resolved artifact's name + version for the caller.
+    m = (
+        db.query(SemanticMetricDefinition)
+        .filter(SemanticMetricDefinition.id == req.metric_id)
+        .first()
+    )
+    return ResolutionResponse(
+        metric_id=req.metric_id,
+        metric_name=m.name if m else "",
+        metric_version=m.version_number if m else 0,
+        sql=sql,
+        placeholders=placeholders,
+        lineage=[],
     )
