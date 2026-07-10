@@ -14,6 +14,7 @@ from app.api.routers import autopilot as autopilot_router
 from app.api.routers import mappings as mappings_router
 from app.api.routers import schema_catalog as schema_catalog_router
 from app.api.routers import dashboard as dashboard_router
+from app.api.routers import semantic as semantic_router
 from app.core.celery_app import celery_app  # noqa: F401  (registers tasks on import)
 from app.core.config import settings
 from app.core.database import Base, engine, SessionLocal
@@ -26,6 +27,10 @@ from app.models.drift_event import DriftEvent  # noqa: F401  (Task #6: persisted
 from app.models.schema_catalog import CatalogTable, CatalogColumn, CatalogForeignKey  # noqa: F401  (Task #1: persisted schema catalog)
 from app.models.user import User  # noqa: F401
 from app.models.autopilot import AutopilotRun, AutopilotLog  # noqa: F401
+from app.models.semantic import (  # noqa: F401  (DP-SEM-001 Task #1: ensure semantic tables are created)
+    SemanticEntity, SemanticDimension, SemanticMeasure,
+    SemanticMetricDefinition, SemanticLineage,
+)
 from app.models.mapping import (  # noqa: F401  (ensure mapping tables are created)
     Mapping, MappingVersion, FieldMapping, AISuggestion,
 )
@@ -294,6 +299,7 @@ app.include_router(audit_router.router, prefix="/api/v1/audit", tags=["Audit Tra
 app.include_router(auth_router.router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(autopilot_router.router, prefix="/api/v1/autopilot", tags=["AI Autopilot"])
 app.include_router(dashboard_router.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
+app.include_router(semantic_router.router, prefix="/api/v1/semantic", tags=["Semantic / Metrics"])
 
 @app.get("/health")
 def health_check():
