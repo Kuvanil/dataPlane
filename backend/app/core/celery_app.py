@@ -19,7 +19,10 @@ celery_app = Celery(
         "app.tasks.ai_tasks",
         "app.tasks.connector_tasks",
         "app.tasks.autopilot_tasks",
+        "app.tasks.audit_tasks",
+        "app.tasks.schema_intel_tasks",
         "app.workers.mapping_tasks",
+        "app.workers.pipeline_tasks",
     ],
 )
 
@@ -42,6 +45,10 @@ celery_app.conf.update(
         "autopilot-evaluate-recommendations": {
             "task": "app.tasks.autopilot_tasks.evaluate_recommendations_task",
             "schedule": crontab(minute=f"*/{settings.AUTOPILOT_EVALUATE_INTERVAL_MINUTES}"),
+        },
+        "flush-audit-buffer": {
+            "task": "app.tasks.audit_tasks.flush_audit_buffer_task",
+            "schedule": crontab(minute=f"*/{settings.AUDIT_BUFFER_FLUSH_INTERVAL_MINUTES}"),
         },
     },
     timezone="UTC",

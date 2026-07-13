@@ -95,6 +95,50 @@ export const api = {
     return res.json() as Promise<T>;
   },
 
+  async patch<T>(path: string, body?: unknown): Promise<T> {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "PATCH",
+      headers: authHeaders(body !== undefined),
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+    if (res.status === 401) { handle401(); throw new ApiError(401, "Unauthorized"); }
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, errBody?.detail ?? res.statusText);
+    }
+    return res.json() as Promise<T>;
+  },
+
+  async download(path: string): Promise<{ blob: Blob; filename: string }> {
+    const res = await fetch(`${API_BASE}${path}`, { headers: authHeaders(false) });
+    if (res.status === 401) { handle401(); throw new ApiError(401, "Unauthorized"); }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, body?.detail ?? res.statusText);
+    }
+    const disposition = res.headers.get("Content-Disposition") ?? "";
+    const match = /filename="?([^"]+)"?/.exec(disposition);
+    const blob = await res.blob();
+    return { blob, filename: match?.[1] ?? "download" };
+  },
+
+  async downloadPost(path: string, body: unknown): Promise<{ blob: Blob; filename: string }> {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "POST",
+      headers: authHeaders(true),
+      body: JSON.stringify(body),
+    });
+    if (res.status === 401) { handle401(); throw new ApiError(401, "Unauthorized"); }
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, errBody?.detail ?? res.statusText);
+    }
+    const disposition = res.headers.get("Content-Disposition") ?? "";
+    const match = /filename="?([^"]+)"?/.exec(disposition);
+    const blob = await res.blob();
+    return { blob, filename: match?.[1] ?? "download" };
+  },
+
   async delete(path: string): Promise<void> {
     const res = await fetch(`${API_BASE}${path}`, {
       method: "DELETE",

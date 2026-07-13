@@ -14,9 +14,9 @@ full-replace-per-table upsert that populates these tables.
 from __future__ import annotations
 
 from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime, ForeignKey, UniqueConstraint,
+    Column, Integer, String, Boolean, DateTime, Float, ForeignKey, UniqueConstraint,
 )
-from sqlalchemy.orm import relationship
+from sqlalchemy.orm import backref, relationship
 from sqlalchemy.sql import func
 
 from app.core.database import Base
@@ -81,3 +81,64 @@ class CatalogForeignKey(Base):
     references_column = Column(String, nullable=False)
 
     column = relationship("CatalogColumn", back_populates="foreign_keys_rel")
+
+
+class ColumnProfile(Base):
+    """Per-column profiling metrics (Task #2, FR2/FR7).
+
+    No raw sample values are persisted here — schema_intel_tasks Task #8
+    Decision 1 requires sample data to stay in-memory for the duration of
+    a single profiling task and never touch a database column, log line,
+    audit payload, or API response.
+    """
+    __tablename__ = "column_profiles"
+    __table_args__ = (
+        UniqueConstraint("column_id", name="uq_column_profile"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    column_id = Column(Integer, ForeignKey("catalog_columns.id", ondelete="CASCADE"),
+                       nullable=False, unique=True, index=True)
+
+    null_count = Column(Integer, nullable=False, default=0)
+    null_rate = Column(Float, nullable=False, default=0.0)        # 0.0 - 1.0
+    distinct_count = Column(Integer, nullable=True)               # None if too expensive/unsupported
+    min_value = Column(String, nullable=True)                     # String-ified, connector-agnostic
+    max_value = Column(String, nullable=True)
+    sample_size_used = Column(Integer, nullable=False, default=0) # Metadata only, not the data itself
+
+    profiled_at = Column(DateTime(timezone=True), server_default=func.now(),
+                         onupdate=func.now(), nullable=False)
+
+    column = relationship("CatalogColumn", backref=backref("profile", uselist=False))
+
+
+class ColumnClassification(Base):
+    """Persisted PII/sensitivity classification for a column (Task #3, FR3/FR5).
+
+    Replaces the previous recompute-on-every-request model
+    (SecurityService.classify_column) so there's a real row for Task #7's
+    manual override to attach to, and for Task #4's search/filter to query.
+    """
+    __tablename__ = "column_classifications"
+    __table_args__ = (
+        UniqueConstraint("column_id", name="uq_column_classification"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    column_id = Column(Integer, ForeignKey("catalog_columns.id", ondelete="CASCADE"),
+                       nullable=False, unique=True, index=True)
+
+    label = Column(String, nullable=False)       # "PII" | "Sensitive" | "Public"
+    level = Column(String, nullable=False)        # "High" | "Medium" | "Low"
+    confidence = Column(Float, nullable=False, default=0.0)  # 0.0 - 1.0
+    # "keyword" (name-based) | "value_pattern" (content-based, Task #3 AC2) |
+    # "manual_override" (Task #7)
+    method = Column(String, nullable=False, default="keyword")
+    overridden_by = Column(String, nullable=True)  # actor email, if method == manual_override
+    overridden_at = Column(DateTime(timezone=True), nullable=True)
+
+    classified_at = Column(DateTime(timezone=True), server_default=func.now(),
+                           onupdate=func.now(), nullable=False)
+
+    column = relationship("CatalogColumn", backref=backref("classification", uselist=False))

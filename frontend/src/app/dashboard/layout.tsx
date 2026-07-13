@@ -11,6 +11,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { id: "dashboard", label: "Dashboard", icon: "📊", href: "/dashboard" },
     { id: "connectors", label: "Connectors", icon: "🔌", href: "/dashboard/connectors" },
     { id: "visualize", label: "Visualize", icon: "🌐", href: "/dashboard/visualize" },
+    { id: "topology", label: "Schema Topology", icon: "🕸️", href: "/dashboard/visualize/topology" },
     { id: "schema", label: "Schema Intel", icon: "🧠", href: "/dashboard/schema" },
     { id: "schema-mapper", label: "Schema Mapper", icon: "🗺️", href: "/dashboard/schema-mapper" },
     { id: "semantic", label: "Semantic / Metrics", icon: "📐", href: "/dashboard/semantic" },

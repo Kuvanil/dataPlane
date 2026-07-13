@@ -35,11 +35,13 @@ from sqlalchemy.orm import Session
 from app.core.database import SessionLocal
 from app.models.connection import DBConnection
 from app.models.mapping import Mapping, MappingVersion
-from app.models.pipeline import Pipeline, PipelineRun
+from app.models.pipeline import Pipeline, PipelineRun, RetryPolicy, Schedule
 from app.services.ai_service import AIService
 from app.services.audit_helper import record_audit
 from app.services.schema_mapper_service import SchemaMapperService
 from app.services.schema_service import SchemaService
+
+ACTIVE_RUN_STATUSES = ("pending", "running", "retrying")
 
 logger = logging.getLogger(__name__)
 
@@ -690,6 +692,9 @@ class PipelineCRUD:
         )
         db.add(pipeline)
         db.flush()
+        # Task #5: every pipeline gets a default retry policy at create time
+        # so run_pipeline_task always has one to read (3 attempts, 60s backoff).
+        db.add(RetryPolicy(pipeline_id=pipeline.id, max_attempts=3, backoff_seconds=60))
         record_audit(
             db, "pipeline_created", actor=actor,
             connection_id=source_connection_id,
@@ -778,14 +783,181 @@ class PipelineCRUD:
         *,
         limit: int = 50,
         offset: int = 0,
+        status: Optional[str] = None,
+        trigger: Optional[str] = None,
     ) -> tuple:
         # Verify the pipeline exists so 404 fires cleanly instead of an
         # empty list (which would be ambiguous).
         PipelineCRUD.get_pipeline(db, pipeline_id)
         base = db.query(PipelineRun).filter(PipelineRun.pipeline_id == pipeline_id)
+        if status:
+            base = base.filter(PipelineRun.status == status)
+        if trigger:
+            base = base.filter(PipelineRun.trigger == trigger)
         total = base.count()
         items = base.order_by(PipelineRun.id.desc()).offset(offset).limit(limit).all()
         return items, total
+
+    @staticmethod
+    def get_run(db: Session, pipeline_id: int, run_id: int) -> PipelineRun:
+        PipelineCRUD.get_pipeline(db, pipeline_id)
+        run = db.query(PipelineRun).filter(
+            PipelineRun.id == run_id, PipelineRun.pipeline_id == pipeline_id,
+        ).first()
+        if not run:
+            raise HTTPException(status_code=404, detail="run not found")
+        return run
+
+    # ── Task #3/#9: manual run + concurrency guard ────────────────────
+
+    @staticmethod
+    def create_run(
+        db: Session,
+        pipeline_id: int,
+        *,
+        trigger: str,
+        actor: str,
+        parent_run_id: Optional[int] = None,
+    ) -> PipelineRun:
+        """Create a new PipelineRun row, enforcing at most one active run
+        per pipeline (Task #9). ``SELECT ... FOR UPDATE`` serializes
+        concurrent callers on Postgres; SQLite (used in tests/dev) has no
+        row-level locking, so the check-then-insert has a small race
+        window there — acceptable for a dev-only gap, not for the
+        Postgres-backed production path this guard actually protects."""
+        p = (
+            db.query(Pipeline)
+            .filter(Pipeline.id == pipeline_id)
+            .with_for_update()
+            .first()
+        )
+        if not p:
+            raise HTTPException(status_code=404, detail="pipeline not found")
+        if not p.enabled:
+            raise HTTPException(status_code=422, detail="pipeline is disabled")
+
+        active = db.query(PipelineRun).filter(
+            PipelineRun.pipeline_id == pipeline_id,
+            PipelineRun.status.in_(ACTIVE_RUN_STATUSES),
+        ).first()
+        if active:
+            raise HTTPException(
+                status_code=409,
+                detail=f"pipeline {pipeline_id} already has an active run ({active.id})",
+            )
+
+        run = PipelineRun(
+            pipeline_id=pipeline_id, status="pending", trigger=trigger,
+            parent_run_id=parent_run_id,
+        )
+        db.add(run)
+        db.flush()
+
+        record_audit(
+            db, "pipeline_run_started" if trigger != "rerun" else "pipeline_rerun",
+            actor=actor, connection_id=p.source_connection_id,
+            payload={
+                "pipeline_id": pipeline_id, "run_id": run.id, "trigger": trigger,
+                **({"original_run_id": parent_run_id} if parent_run_id else {}),
+            },
+        )
+        db.commit()
+        db.refresh(run)
+        return run
+
+    # ── Task #4: schedule CRUD ─────────────────────────────────────────
+
+    @staticmethod
+    def upsert_schedule(
+        db: Session, pipeline_id: int, *,
+        cron_expression: str, enabled: bool, timezone: str, actor: str,
+    ) -> Schedule:
+        from croniter import croniter
+        p = PipelineCRUD.get_pipeline(db, pipeline_id)
+        if not croniter.is_valid(cron_expression):
+            raise HTTPException(status_code=422, detail=f"invalid cron expression: {cron_expression}")
+
+        schedule = db.query(Schedule).filter(Schedule.pipeline_id == pipeline_id).first()
+        if schedule:
+            schedule.cron_expression = cron_expression
+            schedule.enabled = enabled
+            schedule.timezone = timezone
+        else:
+            schedule = Schedule(
+                pipeline_id=pipeline_id, cron_expression=cron_expression,
+                enabled=enabled, timezone=timezone,
+            )
+            db.add(schedule)
+        db.flush()
+        record_audit(
+            db, "pipeline_schedule_updated", actor=actor,
+            connection_id=p.source_connection_id,
+            payload={"pipeline_id": pipeline_id, "cron_expression": cron_expression, "enabled": enabled},
+        )
+        db.commit()
+        db.refresh(schedule)
+        return schedule
+
+    @staticmethod
+    def delete_schedule(db: Session, pipeline_id: int, *, actor: str) -> None:
+        p = PipelineCRUD.get_pipeline(db, pipeline_id)
+        schedule = db.query(Schedule).filter(Schedule.pipeline_id == pipeline_id).first()
+        if not schedule:
+            raise HTTPException(status_code=404, detail="schedule not found")
+        db.delete(schedule)
+        record_audit(
+            db, "pipeline_schedule_deleted", actor=actor,
+            connection_id=p.source_connection_id,
+            payload={"pipeline_id": pipeline_id},
+        )
+        db.commit()
+
+    @staticmethod
+    def toggle_schedule(db: Session, pipeline_id: int, *, enabled: bool, actor: str) -> Schedule:
+        p = PipelineCRUD.get_pipeline(db, pipeline_id)
+        schedule = db.query(Schedule).filter(Schedule.pipeline_id == pipeline_id).first()
+        if not schedule:
+            raise HTTPException(status_code=404, detail="schedule not found")
+        schedule.enabled = enabled
+        record_audit(
+            db, "pipeline_schedule_toggled", actor=actor,
+            connection_id=p.source_connection_id,
+            payload={"pipeline_id": pipeline_id, "enabled": enabled},
+        )
+        db.commit()
+        db.refresh(schedule)
+        return schedule
+
+    # ── Task #5: retry policy CRUD ─────────────────────────────────────
+
+    @staticmethod
+    def upsert_retry_policy(
+        db: Session, pipeline_id: int, *,
+        max_attempts: int, backoff_seconds: int,
+        retryable_error_patterns: Optional[List[str]], actor: str,
+    ) -> RetryPolicy:
+        p = PipelineCRUD.get_pipeline(db, pipeline_id)
+        policy = db.query(RetryPolicy).filter(RetryPolicy.pipeline_id == pipeline_id).first()
+        if policy:
+            policy.max_attempts = max_attempts
+            policy.backoff_seconds = backoff_seconds
+            policy.retryable_error_patterns = retryable_error_patterns
+        else:
+            policy = RetryPolicy(
+                pipeline_id=pipeline_id, max_attempts=max_attempts,
+                backoff_seconds=backoff_seconds,
+                retryable_error_patterns=retryable_error_patterns,
+            )
+            db.add(policy)
+        db.flush()
+        record_audit(
+            db, "pipeline_retry_policy_updated", actor=actor,
+            connection_id=p.source_connection_id,
+            payload={"pipeline_id": pipeline_id, "max_attempts": max_attempts},
+        )
+        db.commit()
+        db.refresh(policy)
+        return policy
 
     # ── Task #2: Drift validation (FR2 / AC2) ────────────────────
 

@@ -1,6 +1,8 @@
 # ADR — App-Wide Tenant Isolation Model
 
-**Status:** Proposed — awaiting Security/Product sign-off. **No code implements this yet.**
+**Status:** Accepted (2026-07-13) — Option A (row-level `tenant_id` + Postgres RLS), signed off
+answers to all 5 open questions below. **No code implements this yet; see
+[INDEX.md](INDEX.md) for the execution order.**
 
 **Supersedes (content-wise; those files now just point here):**
 `review_schema_mapper_tasks/CONTRADICTIONS.md` C4 (2026-07-03, the original finding) →
@@ -156,3 +158,24 @@ Once Security/Product answer §6: file `INDEX.md` in this directory (already dra
 breakdown ready) as an active epic, same treatment as AI Autopilot — spec reviewed, then built
 task-by-task with tests. Until then, this ADR is the artifact the six prior cross-reference files
 should point to; no engineering work is scheduled against it.
+
+## 8. Answers to §6 open questions (2026-07-13)
+
+1. **Tenant cardinality per user.** One tenant per user — simple FK on `users.tenant_id`
+   (`nullable=True` during migration, `NOT NULL` after backfill). No join table, no
+   tenant-switcher UI. This resolves Task #09 in `INDEX.md` to a no-op: the frontend needs the
+   tenant name surfaced in session context (e.g. sidebar/header), not a switcher.
+2. **Physical isolation requirement.** No contractual/regulatory requirement exists today.
+   Confirms Option A (row-level `tenant_id` + RLS) as final — §2's Option B/C are rejected, not
+   just deferred.
+3. **Platform-level cross-tenant access.** No internal ops/support role needs cross-tenant
+   access. Task #07's Celery bypass is scoped *only* to the existing background sweep tasks
+   (`check_schema_drift_task`, health-check sweep, autopilot evaluate sweep) that legitimately
+   iterate all tenants for platform maintenance — not to any human-facing role. No
+   `platform_admin`-style bypass role is being added.
+4. **Rollout sequencing.** Big-bang — all 11 root tables + 13 child tables scoped in one
+   coordinated release, per the ADR's own recommendation in §6.4.
+5. **Legacy-tenant assignment.** Current Postgres data is disposable dev/demo data. Task #02's
+   backfill simplifies to: create one "default" tenant row, then either backfill all existing
+   rows to it or drop and reseed — implementer's choice, since there's no real customer data to
+   preserve.

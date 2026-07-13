@@ -29,6 +29,23 @@ class Settings(BaseSettings):
     AUTOPILOT_BREAKER_THRESHOLD: int = 3
     AUTOPILOT_BREAKER_WINDOW_MINUTES: int = 60
     AUTOPILOT_DRIFT_LOOKBACK_HOURS: int = 24
+    # Audit Trail (audit_trail_tasks #2/#3/#6).
+    AUDIT_INGEST_BATCH_MAX: int = 100
+    AUDIT_DB_WRITE_MAX_RETRIES: int = 2
+    AUDIT_DB_CIRCUIT_FAILURE_THRESHOLD: int = 3
+    AUDIT_DB_CIRCUIT_RESET_TIMEOUT_SECONDS: int = 15
+    AUDIT_BUFFER_MAX_SIZE: int = 5000
+    AUDIT_BUFFER_FLUSH_INTERVAL_MINUTES: int = 1
+    AUDIT_EXPORT_MAX_ROWS: int = 100000
+    AUDIT_RETENTION_DAYS: int = 90
+    # Query Studio (query_studio_tasks #1/#3/#5).
+    QUERY_STUDIO_MAX_RESULT_ROWS: int = 5000
+    QUERY_STUDIO_EXECUTION_TIMEOUT_SECONDS: int = 30
+    QUERY_STUDIO_DEFAULT_PAGE_SIZE: int = 100
+    # Schema Intel profiling (schema_intel_tasks #2, PII sign-off #8 decisions 2/4).
+    SCHEMA_INTEL_SAMPLE_LIMIT: int = 1000
+    SCHEMA_INTEL_MAX_DISTINCT_SCAN_ROWS: int = 100000
+    SCHEMA_INTEL_USE_SEPARATE_CREDENTIALS: bool = False
 
     class Config:
         env_file = ".env"

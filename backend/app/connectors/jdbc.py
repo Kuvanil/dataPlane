@@ -8,7 +8,7 @@ provides a Python DB-API 2.0 driver or SQLAlchemy dialect URL.
 import time
 from sqlalchemy import create_engine, inspect, text
 from typing import List, Dict, Any
-from .base import BaseConnector, TestConnectionResult, classify_connection_error
+from .base import BaseConnector, ColumnProfileResult, TestConnectionResult, classify_connection_error
 
 
 class JDBCConnector(BaseConnector):
@@ -111,3 +111,47 @@ class JDBCConnector(BaseConnector):
         if self.engine:
             self.engine.dispose()
             self.engine = None
+
+    def profile_column(self, table: str, column: str,
+                        sample_limit: int = 1000,
+                        distinct_scan_limit: int = 100000) -> ColumnProfileResult:
+        conn = self.connect()
+        q = f'"{table}"'
+        c = f'"{column}"'
+
+        total, non_null = conn.execute(text(f"SELECT COUNT(*), COUNT({c}) FROM {q}")).fetchone()
+        null_count = total - non_null
+        null_rate = null_count / total if total > 0 else 0.0
+
+        distinct_count = None
+        min_val = max_val = None
+        error = None
+        try:
+            distinct_count = conn.execute(text(
+                f"SELECT COUNT(DISTINCT {c}) FROM "
+                f"(SELECT {c} FROM {q} LIMIT {int(distinct_scan_limit)}) sub"
+            )).scalar()
+        except Exception as e:
+            error = f"distinct count unavailable: {e}"
+
+        try:
+            min_val, max_val = conn.execute(text(f"SELECT MIN({c}), MAX({c}) FROM {q}")).fetchone()
+        except Exception as e:
+            error = (error + "; " if error else "") + f"min/max unavailable: {e}"
+
+        sample: List[Any] = []
+        try:
+            result = conn.execute(text(
+                f"SELECT {c} FROM {q} WHERE {c} IS NOT NULL LIMIT :lim"
+            ), {"lim": int(sample_limit)})
+            sample = [r[0] for r in result.fetchall()]
+        except Exception:
+            pass
+
+        return ColumnProfileResult(
+            null_count=null_count, null_rate=null_rate,
+            distinct_count=distinct_count,
+            min_value=str(min_val) if min_val is not None else None,
+            max_value=str(max_val) if max_val is not None else None,
+            sample_values=sample, sample_size_used=len(sample), error=error,
+        )

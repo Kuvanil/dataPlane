@@ -2,6 +2,8 @@ from datetime import datetime
 from typing import Any, Dict, Optional, List
 from pydantic import BaseModel, Field
 
+from app.core.config import settings
+
 
 class AuditEventCreate(BaseModel):
     """Canonical audit event schema (AUDIT-T1).
@@ -44,7 +46,7 @@ class AuditEventResponse(BaseModel):
     outcome: str
     summary: Optional[str]
     duration_ms: Optional[int]
-    metadata: Optional[Dict[str, Any]]
+    metadata: Optional[Dict[str, Any]] = Field(default=None, validation_alias="event_metadata")
     connection_id: Optional[int]
     connection_name: Optional[str]
     payload: Optional[Dict[str, Any]]
@@ -58,7 +60,10 @@ class AuditEventResponse(BaseModel):
 
 class AuditEventBatchRequest(BaseModel):
     """Batch ingestion of audit events (AUDIT-T2)."""
-    events: List[AuditEventCreate] = Field(..., max_length=100, description="Batch of events (max 100)")
+    events: List[AuditEventCreate] = Field(
+        ..., max_length=settings.AUDIT_INGEST_BATCH_MAX,
+        description=f"Batch of events (max {settings.AUDIT_INGEST_BATCH_MAX})",
+    )
 
 
 class AuditEventBatchResponse(BaseModel):

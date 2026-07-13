@@ -82,7 +82,16 @@ from app.services.auth_service import AuthService  # noqa: E402
 
 @pytest.fixture()
 def engine():
-    eng = create_engine("sqlite:///:memory:")
+    # StaticPool + check_same_thread=False lets the in-memory SQLite engine be
+    # shared safely across threads (FastAPI's TestClient runs request handlers
+    # on an asyncio thread pool, not the test thread) — same pattern as
+    # tests/mapping/conftest.py, needed by the router-level tests here too.
+    from sqlalchemy.pool import StaticPool
+    eng = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(eng)
     try:
         yield eng
@@ -181,6 +190,93 @@ def seeded_published_mapping(db, seeded_connections):
     )
     db.add(v)
     db.flush()
+    m.current_version_id = v.id
+    db.commit()
+    db.refresh(m)
+    return m, v
+
+
+@pytest.fixture()
+def physical_sqlite_connections(db, tmp_path):
+    """Real SQLite files (not just recorded paths) with a source 'users'
+    table (seeded with rows) and an empty target 'customers' table —
+    needed by the execution engine tests, which actually move rows."""
+    import sqlite3
+
+    src_path = str(tmp_path / "pipe_exec_src.db")
+    tgt_path = str(tmp_path / "pipe_exec_tgt.db")
+
+    src_conn = sqlite3.connect(src_path)
+    src_conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, email TEXT)")
+    src_conn.executemany(
+        "INSERT INTO users (id, name, email) VALUES (?, ?, ?)",
+        [(1, "Alice", "alice@x.com"), (2, "Bob", "bob@x.com"), (3, "Cara", "cara@x.com")],
+    )
+    src_conn.commit()
+    src_conn.close()
+
+    tgt_conn = sqlite3.connect(tgt_path)
+    tgt_conn.execute("CREATE TABLE customers (cust_id INTEGER PRIMARY KEY, full_name TEXT, contact_email TEXT)")
+    tgt_conn.commit()
+    tgt_conn.close()
+
+    src = DBConnection(name="ExecSrc", type="sqlite", config={"path": src_path})
+    tgt = DBConnection(name="ExecTgt", type="sqlite", config={"path": tgt_path})
+    db.add_all([src, tgt])
+    db.commit()
+    db.refresh(src)
+    db.refresh(tgt)
+    return src, tgt
+
+
+@pytest.fixture()
+def seeded_mapping_with_field_mappings(db, physical_sqlite_connections):
+    """A published Mapping + MappingVersion + real FieldMapping rows
+    (version_id set, as MappingService.publish() does), mapping
+    users.id/name/email -> customers.cust_id/full_name/contact_email
+    with a direct transformation on each column."""
+    from app.connectors.sqlite import SQLiteConnector
+    from app.models.mapping import FieldMapping
+
+    src, tgt = physical_sqlite_connections
+    # Drive the schema_snapshot from the connector itself so it exactly
+    # matches what validate_drift's live-schema fetch will compute —
+    # hand-written column dicts would drift-mismatch on missing keys
+    # (nullable/primary_key/foreign_keys) that SQLiteConnector always sets.
+    src_connector = SQLiteConnector(src.config["path"])
+    tgt_connector = SQLiteConnector(tgt.config["path"])
+    source_schema = {t: src_connector.get_table_schema(t) for t in src_connector.get_tables()}
+    target_schema = {t: tgt_connector.get_table_schema(t) for t in tgt_connector.get_tables()}
+    src_connector.close()
+    tgt_connector.close()
+
+    m = Mapping(name="Exec Map", source_id=src.id, target_id=tgt.id,
+                status="published", created_by="test")
+    db.add(m)
+    db.flush()
+    v = MappingVersion(
+        mapping_id=m.id, version_number=1, status="published", published_by="test",
+        schema_snapshot={"source": source_schema, "target": target_schema},
+        edges_snapshot=[],
+    )
+    db.add(v)
+    db.flush()
+
+    field_mappings = [
+        ("id", "cust_id", True),
+        ("name", "full_name", False),
+        ("email", "contact_email", False),
+    ]
+    for source_col, target_col, is_pk in field_mappings:
+        db.add(FieldMapping(
+            mapping_id=m.id, version_id=v.id,
+            target_table="customers", target_column=target_col,
+            target_is_pk=1 if is_pk else 0,
+            sources=[{"table": "users", "column": source_col, "type": "TEXT"}],
+            transformation={"kind": "direct"},
+            origin="manual",
+        ))
+
     m.current_version_id = v.id
     db.commit()
     db.refresh(m)

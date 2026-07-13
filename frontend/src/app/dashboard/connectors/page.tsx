@@ -1,49 +1,9 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { api, ApiError } from "@/lib/api";
-
-interface Connector {
-  id: number;
-  name: string;
-  type: string;
-  config: Record<string, unknown>;
-  health_status?: string;
-  last_test_error?: string | null;
-}
-
-interface TestResponse {
-  status: string;
-  diagnostics?: { version?: string | null; latency_ms?: number | null };
-  error?: { code: string; message: string } | null;
-}
-
-const HEALTH_META: Record<string, { label: string; dot: string; text: string }> = {
-  healthy:  { label: "Healthy",    dot: "bg-emerald-400", text: "text-emerald-400" },
-  degraded: { label: "Degraded",   dot: "bg-amber-400",   text: "text-amber-400" },
-  down:     { label: "Down",       dot: "bg-rose-400",    text: "text-rose-400" },
-  unknown:  { label: "Not tested", dot: "bg-zinc-500",    text: "text-zinc-400" },
-};
-
-interface SchemaColumn { name: string; type: string; }
-interface SchemaData { id: number; name: string; schema: Record<string, SchemaColumn[]>; }
-
-const TYPE_META: Record<string, { icon: string; color: string; bgColor: string }> = {
-  sqlite:   { icon: "💾", color: "text-blue-400",   bgColor: "bg-blue-500/10 border-blue-500/20" },
-  postgres: { icon: "🐘", color: "text-sky-400",    bgColor: "bg-sky-500/10 border-sky-500/20" },
-  mysql:    { icon: "🐬", color: "text-orange-400", bgColor: "bg-orange-500/10 border-orange-500/20" },
-  oracle:   { icon: "🏛️", color: "text-red-400",    bgColor: "bg-red-500/10 border-red-500/20" },
-  jdbc:     { icon: "🔗", color: "text-violet-400", bgColor: "bg-violet-500/10 border-violet-500/20" },
-};
-
-const VALID_TYPES = ["sqlite", "postgres", "mysql", "oracle", "jdbc"] as const;
-
-const CONFIG_TEMPLATES: Record<string, string> = {
-  sqlite:   '{"path": "/tmp/my_database.db"}',
-  postgres: '{"host": "localhost", "port": 5432, "dbname": "mydb", "user": "postgres", "password": "secret"}',
-  mysql:    '{"host": "localhost", "port": 3306, "dbname": "mydb", "user": "root", "password": "secret"}',
-  oracle:   '{"host": "localhost", "port": 1521, "service_name": "ORCL", "user": "system", "password": "secret"}',
-  jdbc:     '{"url": "postgresql://user:pass@host:5432/dbname"}',
-};
+import type { Connector, TestResponse, SchemaData } from "./lib/types";
+import { CONFIG_TEMPLATES, TYPE_META, VALID_TYPES } from "./lib/types";
+import ConnectorCard from "./components/ConnectorCard";
 
 export default function ConnectorsPage() {
   const [connectors, setConnectors] = useState<Connector[]>([]);
@@ -63,7 +23,7 @@ export default function ConnectorsPage() {
   const [schemaModal, setSchemaModal] = useState<SchemaData | null>(null);
   const [scanningId, setScanningId] = useState<number | null>(null);
 
-  const fetchConnectors = async () => {
+  const fetchConnectors = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
@@ -75,9 +35,9 @@ export default function ConnectorsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
-  useEffect(() => { fetchConnectors(); }, []);
+  useEffect(() => { fetchConnectors(); }, [fetchConnectors]);
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -162,54 +122,18 @@ export default function ConnectorsPage() {
         <div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">Loading connectors...</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {connectors.map((c) => {
-            const meta = TYPE_META[c.type] ?? TYPE_META.sqlite;
-            const test = testResults[c.id];
-            // Prefer a fresh test result from this session; otherwise the
-            // stored health status written by tests + the health scheduler.
-            const health = test?.status === "connected" ? HEALTH_META.healthy
-              : test?.status === "failed" ? HEALTH_META.down
-              : HEALTH_META[c.health_status ?? "unknown"] ?? HEALTH_META.unknown;
-            const statusDetail = test?.detail ?? c.last_test_error ?? undefined;
-            return (
-              <div key={c.id} className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800 backdrop-blur-sm flex flex-col gap-4 group hover:border-zinc-700 transition-all">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${meta.bgColor} ${meta.color}`}>
-                      {meta.icon} {c.type}
-                    </span>
-                    <h4 className="font-semibold text-zinc-200 mt-2">{c.name}</h4>
-                  </div>
-                  <span
-                    className={`flex items-center gap-1.5 text-xs ${health.text}`}
-                    title={statusDetail}
-                  >
-                    <span className={`w-1.5 h-1.5 rounded-full ${health.dot}`} />
-                    {test?.status === "testing" ? "Testing..." : health.label}
-                  </span>
-                </div>
-                <div className="border-t border-zinc-800/50 pt-3 text-xs text-zinc-500">
-                  <span className="font-mono text-[10px] truncate block">{JSON.stringify(c.config)}</span>
-                </div>
-                <div className="flex gap-2 mt-2">
-                  <button
-                    onClick={() => handleTest(c.id)}
-                    disabled={testingId === c.id}
-                    className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-medium text-zinc-300 transition-colors disabled:opacity-50"
-                  >
-                    {testingId === c.id ? "Testing..." : "Test Conn"}
-                  </button>
-                  <button
-                    onClick={() => handleScanSchema(c.id)}
-                    disabled={scanningId === c.id}
-                    className="flex-1 py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-medium text-zinc-300 transition-colors disabled:opacity-50"
-                  >
-                    {scanningId === c.id ? "Scanning..." : "Scan Schema"}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
+          {connectors.map((c) => (
+            <ConnectorCard
+              key={c.id}
+              connector={c}
+              testResult={testResults[c.id]}
+              isTesting={testingId === c.id}
+              isScanning={scanningId === c.id}
+              onTest={handleTest}
+              onScan={handleScanSchema}
+              onRefresh={fetchConnectors}
+            />
+          ))}
           <div
             onClick={() => { setIsModalOpen(true); setCreateError(null); }}
             className="border border-dashed border-zinc-800 rounded-2xl flex flex-col items-center justify-center p-6 text-zinc-500 hover:border-zinc-600 hover:text-zinc-400 cursor-pointer transition-all min-h-[160px]"

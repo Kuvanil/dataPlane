@@ -86,7 +86,15 @@ from app.services.auth_service import AuthService  # noqa: E402
 
 @pytest.fixture()
 def engine():
-    eng = create_engine("sqlite:///:memory:")
+    # StaticPool + check_same_thread=False lets the in-memory SQLite engine be
+    # shared safely across threads (needed by router-level TestClient tests)
+    # — same pattern as tests/pipelines/conftest.py.
+    from sqlalchemy.pool import StaticPool
+    eng = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
     Base.metadata.create_all(eng)
     try:
         yield eng
@@ -120,6 +128,34 @@ def admin(db):
 
 
 @pytest.fixture()
+def analyst(db):
+    u = User(
+        email="analyst@test.local",
+        hashed_password=AuthService.hash_password("x"),
+        role="analyst",
+        is_active=True,
+    )
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return u
+
+
+@pytest.fixture()
+def viewer(db):
+    u = User(
+        email="viewer@test.local",
+        hashed_password=AuthService.hash_password("x"),
+        role="viewer",
+        is_active=True,
+    )
+    db.add(u)
+    db.commit()
+    db.refresh(u)
+    return u
+
+
+@pytest.fixture()
 def seeded_connections(db):
     src = DBConnection(name="SRC", type="sqlite", config={"path": "/tmp/src.db"})
     tgt = DBConnection(name="TGT", type="sqlite", config={"path": "/tmp/tgt.db"})
@@ -128,3 +164,35 @@ def seeded_connections(db):
     db.refresh(src)
     db.refresh(tgt)
     return src, tgt
+
+
+@pytest.fixture()
+def physical_sqlite_connection(db, tmp_path):
+    """A real SQLite file (not just a recorded path) with a 'people' table
+    seeded with rows — needed by profiling tests, which actually query
+    table data (null rate, distinct count, min/max, sample values)."""
+    import sqlite3
+
+    path = str(tmp_path / "profiling_source.db")
+    conn = sqlite3.connect(path)
+    conn.execute(
+        "CREATE TABLE people (id INTEGER PRIMARY KEY, contact TEXT, age INTEGER, notes TEXT)"
+    )
+    conn.executemany(
+        "INSERT INTO people (id, contact, age, notes) VALUES (?, ?, ?, ?)",
+        [
+            (1, "alice@example.com", 30, "vip"),
+            (2, "bob@example.com", 25, None),
+            (3, "carol@example.com", 40, "vip"),
+            (4, "not-an-email", 22, None),
+            (5, "dave@example.com", 35, "vip"),
+        ],
+    )
+    conn.commit()
+    conn.close()
+
+    db_conn = DBConnection(name="ProfilingSrc", type="sqlite", config={"path": path})
+    db.add(db_conn)
+    db.commit()
+    db.refresh(db_conn)
+    return db_conn

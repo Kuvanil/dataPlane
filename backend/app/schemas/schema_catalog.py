@@ -1,10 +1,10 @@
-"""Pydantic schemas for the Schema Intel catalog API (Task #1)."""
+"""Pydantic schemas for the Schema Intel catalog API (Tasks #1-#4, #7)."""
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 # ── Response bodies ──────────────────────────────────────────────────
@@ -17,6 +17,30 @@ class CatalogForeignKeyResponse(BaseModel):
     references_column: str
 
 
+class ColumnProfileResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    null_count: int
+    null_rate: float
+    distinct_count: Optional[int]
+    min_value: Optional[str]
+    max_value: Optional[str]
+    sample_size_used: int
+    profiled_at: datetime
+
+
+class ColumnClassificationResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    label: str
+    level: str
+    confidence: float
+    method: str
+    overridden_by: Optional[str] = None
+    overridden_at: Optional[datetime] = None
+    classified_at: datetime
+
+
 class CatalogColumnResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -27,6 +51,8 @@ class CatalogColumnResponse(BaseModel):
     is_primary_key: bool
     ordinal_position: int
     foreign_keys: List[CatalogForeignKeyResponse] = []
+    profile: Optional[ColumnProfileResponse] = None
+    classification: Optional[ColumnClassificationResponse] = None
 
 
 class CatalogTableResponse(BaseModel):
@@ -49,3 +75,17 @@ class ScanResult(BaseModel):
     tables_scanned: int
     columns_scanned: int
     scanned_at: datetime
+
+
+class ProfileEnqueueResult(BaseModel):
+    status: str
+    task_id: Optional[str] = None
+    message: str
+
+
+# ── Request bodies ────────────────────────────────────────────────────
+
+
+class ClassificationOverrideRequest(BaseModel):
+    label: str = Field(..., min_length=1, max_length=50)
+    level: str = Field(..., min_length=1, max_length=20)

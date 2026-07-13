@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import List, Dict, Any, Optional
 
 
@@ -112,3 +112,37 @@ class BaseConnector(ABC):
     def close(self):
         """Close connection handles safely."""
         pass
+
+    def profile_column(self, table: str, column: str,
+                        sample_limit: int = 1000,
+                        distinct_scan_limit: int = 100000) -> "ColumnProfileResult":
+        """Profile a single column: null rate, distinct count, min/max, sample values.
+
+        Not abstract — a column-metadata-only connector (if one is ever
+        added) can skip profiling entirely by not overriding this, and
+        callers see a clear "not implemented" error rather than a crash.
+        Every connector shipped today overrides this (schema_intel_tasks #2).
+
+        :param sample_limit: Max rows to sample for sample_values (Schema Intel
+            Task #8 Decision 2 default: 1000). Sample values are used only for
+            in-memory classification (Task #3) and must NEVER be persisted.
+        :param distinct_scan_limit: Max rows scanned for COUNT(DISTINCT ...)
+            (Task #8 Decision 2 default: 100000) — bounds an expensive query
+            on large unindexed columns.
+        """
+        raise NotImplementedError(f"{type(self).__name__} does not implement profile_column")
+
+
+@dataclass
+class ColumnProfileResult:
+    """Result of BaseConnector.profile_column(). ``sample_values`` is
+    in-memory only (Schema Intel Task #8 Decision 1) — callers must persist
+    only the aggregate fields, never this list."""
+    null_count: int = 0
+    null_rate: float = 0.0
+    distinct_count: Optional[int] = None
+    min_value: Optional[str] = None
+    max_value: Optional[str] = None
+    sample_values: List[Any] = field(default_factory=list)
+    sample_size_used: int = 0
+    error: Optional[str] = None

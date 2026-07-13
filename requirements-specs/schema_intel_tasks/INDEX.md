@@ -44,12 +44,12 @@ the largest remaining gap.**
 | # | TRD ref | Status | Title |
 |---|---|---|---|
 | [01](01_catalog_data_model_and_discovery.md) | FR1, AC1, §11 | [x] | Catalog data model + persisted discovery engine |
-| [02](02_profiling_jobs.md) | FR2, FR7 | [ ] | Profiling jobs (async, bounded samples) |
-| [03](03_classification_confidence.md) | FR3, AC2 | [?] | Classification service + confidence scoring |
-| [04](04_catalog_search_api.md) | FR4 | [ ] | Catalog search API |
+| [02](02_profiling_jobs.md) | FR2, FR7 | [x] | Profiling jobs (async, bounded samples) — landed 2026-07-13 |
+| [03](03_classification_confidence.md) | FR3, AC2 | [x] | Classification service + confidence scoring — landed 2026-07-13, both keyword+confidence AND value-pattern (AC2) halves implemented together |
+| [04](04_catalog_search_api.md) | FR4 | [x] | Catalog search API — landed 2026-07-13 |
 | [05](05_catalog_ui.md) | FR4, FR5 (UI half) | [ ] | Catalog UI + classification badges |
 | [06](06_drift_detection_completion.md) | FR6, AC3 | [x] | Drift detection completion (column-level + on-demand rescan) |
-| [07](07_manual_override_and_audit.md) | FR5, FR8 | [ ] | Manual override + full audit coverage |
+| [07](07_manual_override_and_audit.md) | FR5, FR8 | [x] | Manual override + full audit coverage — landed 2026-07-13 |
 | [08](08_pii_data_safety_signoff.md) | Security NFR, §9, §12 DoD | [!] | PII data-safety sign-off (sample minimization, encryption at rest, least-privilege credentials) |
 | [09](09_tenant_isolation_signoff.md) | §9 assumption / DoD | [!] | Tenant isolation — cross-reference, not a new task |
 | [10](10_tests.md) | §12 DoD | [ ] | Test suite |
@@ -170,3 +170,29 @@ the largest remaining gap.**
   real instance is available in this environment) — all passing, plus the full existing suite
   (148 tests total) unaffected. Task `schema_intel_tasks/01_catalog_data_model_and_discovery.md`
   done.
+- 2026-07-13 — **Tasks #2, #3, #4, #7 landed together** (profiling + classification depend on
+  each other's output, per Task #3's own recommendation to layer value-pattern detection on top
+  of profiling rather than ship keyword-only first). `ColumnProfile` and `ColumnClassification`
+  models added to `schema_catalog.py`; `BaseConnector.profile_column()` implemented for all 5
+  connectors (SQLite fully per spec, Postgres/MySQL/Oracle-real/JDBC dialect-adapted — bounded
+  sample + distinct-scan-limited subquery + MIN/MAX with graceful degradation on unsupported
+  types); `app/tasks/schema_intel_tasks.py` fans out profile_connection_task ->
+  profile_table_task -> profile_column_task per Task #2's design, classifying each column
+  in-memory from its sample immediately after profiling (Task #8 Decision 1: sample_values never
+  persisted — confirmed no `sample_values` column exists on `ColumnProfile` and a dedicated test
+  asserts this). `SecurityService.classify_column()` now returns `confidence`+`method`
+  (keyword exact=0.9/substring=0.6, matching AC2's demonstrated value-pattern classification
+  when sample_values are available — email/phone/ssn/credit-card regex at a 60% match-rate
+  threshold, verified against a real "contact" column classified as PII purely from content).
+  `GET /catalog/{id}/tables` gained `q`/`data_type`/`classification_label` filters (Task #4).
+  `PUT /catalog/columns/{id}/classification` (Task #7) persists a manual override that a
+  subsequent re-profile does not clobber (dedicated test). 43 new backend tests
+  (`test_profiling.py`, `test_classification.py`, `test_catalog_search.py`,
+  `test_router_role_gating.py`), full suite 534/534 passing. One model bug caught by the search
+  test and fixed: the `ColumnProfile`/`ColumnClassification` -> `CatalogColumn` backrefs needed
+  `backref(..., uselist=False)`, not a bare string, or SQLAlchemy defaults the reverse side to a
+  list. Frontend Task #5 (catalog UI) landed in the same session — see that task's own file for
+  detail — replacing the pre-TRD Schema Matcher at `/dashboard/schema`. Verified live end-to-end
+  in Docker: scan discovered 3 real tables/17 columns from the seeded CRM SQLite demo db, profile
+  computed real null rates/distinct counts/min-max, `email` classified PII·100% and `ip_address`
+  Sensitive·60% from real data, and a manual override persisted and rendered immediately.

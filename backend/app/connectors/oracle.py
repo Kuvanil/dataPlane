@@ -8,7 +8,7 @@ where no Oracle DB is present.
 
 import time
 from typing import List, Dict, Any
-from .base import BaseConnector, TestConnectionResult, classify_connection_error
+from .base import BaseConnector, ColumnProfileResult, TestConnectionResult, classify_connection_error
 
 
 class OracleConnector(BaseConnector):
@@ -192,3 +192,98 @@ class OracleConnector(BaseConnector):
         if self.conn:
             self.conn.close()
             self.conn = None
+
+    def profile_column(self, table: str, column: str,
+                        sample_limit: int = 1000,
+                        distinct_scan_limit: int = 100000) -> ColumnProfileResult:
+        conn = self.connect()
+        cur = conn.cursor()
+
+        if self._sim_mode:
+            q = '"' + table.replace('"', '""') + '"'
+            c = '"' + column.replace('"', '""') + '"'
+
+            cur.execute(f"SELECT COUNT(*), COUNT({c}) FROM {q}")
+            total, non_null = cur.fetchone()
+            null_count = total - non_null
+            null_rate = null_count / total if total > 0 else 0.0
+
+            distinct_count = None
+            min_val = max_val = None
+            error = None
+            try:
+                cur.execute(
+                    f"SELECT COUNT(DISTINCT {c}) FROM "
+                    f"(SELECT {c} FROM {q} LIMIT {int(distinct_scan_limit)})"
+                )
+                distinct_count = cur.fetchone()[0]
+            except Exception as e:
+                error = f"distinct count unavailable: {e}"
+            try:
+                cur.execute(f"SELECT MIN({c}), MAX({c}) FROM {q}")
+                min_val, max_val = cur.fetchone()
+            except Exception as e:
+                error = (error + "; " if error else "") + f"min/max unavailable: {e}"
+
+            sample: List[Any] = []
+            try:
+                sample_cur = conn.execute(
+                    f"SELECT {c} FROM {q} WHERE {c} IS NOT NULL LIMIT ?",
+                    (int(sample_limit),),
+                )
+                sample = [r[0] for r in sample_cur.fetchall()]
+            except Exception:
+                pass
+
+            return ColumnProfileResult(
+                null_count=null_count, null_rate=null_rate,
+                distinct_count=distinct_count,
+                min_value=str(min_val) if min_val is not None else None,
+                max_value=str(max_val) if max_val is not None else None,
+                sample_values=sample, sample_size_used=len(sample), error=error,
+            )
+
+        # Real Oracle: no LIMIT keyword — FETCH FIRST (12c+) / ROWNUM, and
+        # named (:name) bind params instead of positional.
+        tbl = f'"{table}"'
+        col = f'"{column}"'
+        cur.execute(f"SELECT COUNT(*), COUNT({col}) FROM {tbl}")
+        total, non_null = cur.fetchone()
+        null_count = total - non_null
+        null_rate = null_count / total if total > 0 else 0.0
+
+        distinct_count = None
+        min_val = max_val = None
+        error = None
+        try:
+            cur.execute(
+                f"SELECT COUNT(DISTINCT {col}) FROM "
+                f"(SELECT {col} FROM {tbl} FETCH FIRST {int(distinct_scan_limit)} ROWS ONLY)"
+            )
+            distinct_count = cur.fetchone()[0]
+        except Exception as e:
+            error = f"distinct count unavailable: {e}"
+        try:
+            cur.execute(f"SELECT MIN({col}), MAX({col}) FROM {tbl}")
+            min_val, max_val = cur.fetchone()
+        except Exception as e:
+            error = (error + "; " if error else "") + f"min/max unavailable: {e}"
+
+        sample: List[Any] = []
+        try:
+            cur.execute(
+                f"SELECT {col} FROM {tbl} WHERE {col} IS NOT NULL "
+                f"FETCH FIRST :lim ROWS ONLY",
+                {"lim": int(sample_limit)},
+            )
+            sample = [r[0] for r in cur.fetchall()]
+        except Exception:
+            pass
+
+        return ColumnProfileResult(
+            null_count=null_count, null_rate=null_rate,
+            distinct_count=distinct_count,
+            min_value=str(min_val) if min_val is not None else None,
+            max_value=str(max_val) if max_val is not None else None,
+            sample_values=sample, sample_size_used=len(sample), error=error,
+        )

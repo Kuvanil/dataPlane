@@ -1,30 +1,30 @@
 # Tenant Isolation — Task Index (app-wide)
 
-> **[!] Entire epic blocked** on Security/Product answering the open questions in
-> [00_architecture_decision.md](00_architecture_decision.md). Nothing below is scheduled work —
-> it's the breakdown ready to execute once that ADR is signed off, so sign-off isn't followed by
-> a second planning pass. Same treatment as every blocked cross-cutting decision in this repo
-> (mapper #07, schema_intel #09/#11, connector #10, dashboard #09, autopilot #11) — those six
-> files now point here instead of restating the gap.
+> **Active epic** — ADR signed off 2026-07-13, see [00_architecture_decision.md §8](00_architecture_decision.md)
+> for the 5 answered open questions. Option A (row-level `tenant_id` + Postgres RLS), one tenant
+> per user, no cross-tenant ops bypass, big-bang rollout, disposable legacy data. Tasks below are
+> ready to execute in order. Same treatment as AI Autopilot — spec reviewed, now built
+> task-by-task with tests.
 
 ## Status legend
-- `[ ]` not started · `[!]` blocked (this entire epic, pending the ADR)
+- `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blocked · `[?]` needs product input
 
-## Priority order (in dependency order — this IS the execution order once unblocked)
+## Priority order (in dependency order — this IS the execution order)
 
-| # | Title | Depends on |
-|---|---|---|
-| 01 | `tenants` table + `tenant_id` on all 11 root tables (nullable, migration-safe) | ADR §6 answered |
-| 02 | Backfill existing rows to a legacy/default tenant; flip `tenant_id` to `NOT NULL` | 01 |
-| 03 | JWT `tenant_id` claim + login flow update | 01 |
-| 04 | `require_tenant()` dependency + request-scoped `SET app.tenant_id` on `get_db` | 03 |
-| 05 | Postgres RLS policies on all 11 root tables (+ 13 child tables per ADR §4) | 01, 04 |
-| 06 | Service-layer sweep: `.filter(tenant_id=...)` on every query in every service | 04 |
-| 07 | Celery cross-tenant sweep tasks get an explicit, named, audited bypass | 05, 06 |
-| 08 | Retype `Pipeline.tenant_id` from placeholder `String` to the real FK | 01 |
-| 09 | Frontend: tenant context in the session; tenant-switcher UI IF ADR Q1 answered multi-tenant-per-user | 03 |
-| 10 | Dedicated cross-tenant-leak test suite — for every root+child table, assert tenant A cannot read/write/list tenant B's rows via any exposed endpoint | 01–07 |
-| 11 | Update all 6 prior cross-reference files' status from "blocked" to "done" once live | all above |
+| # | Title | Status | Depends on |
+|---|---|---|---|
+| 01 | `tenants` table + `tenant_id` on all 11 root tables (nullable, migration-safe) | `[ ]` | — |
+| 02 | Backfill: create one "default" tenant, backfill or reseed (data is disposable per ADR §8.5); flip `tenant_id` to `NOT NULL` | `[ ]` | 01 |
+| 03 | JWT `tenant_id` claim + login flow update | `[ ]` | 01 |
+| 04 | `require_tenant()` dependency + request-scoped `SET app.tenant_id` on `get_db` | `[ ]` | 03 |
+| 05 | Postgres RLS policies on all 11 root tables (+ 13 child tables per ADR §4) | `[ ]` | 01, 04 |
+| 06 | Service-layer sweep: `.filter(tenant_id=...)` on every query in every service | `[ ]` | 04 |
+| 07 | Celery cross-tenant sweep tasks get an explicit, named, audited bypass — scoped ONLY to `check_schema_drift_task`/health-check sweep/autopilot evaluate sweep per ADR §8.3, no human-facing bypass role | `[ ]` | 05, 06 |
+| 08 | Retype `Pipeline.tenant_id` from placeholder `String` to the real FK | `[ ]` | 01 |
+| 09 | Frontend: surface tenant name in session context (sidebar/header) — no switcher UI needed, resolved to 1:1 per ADR §8.1 | `[ ]` | 03 |
+| 10 | Dedicated cross-tenant-leak test suite — for every root+child table, assert tenant A cannot read/write/list tenant B's rows via any exposed endpoint | `[ ]` | 01–07 |
+| 11 | Update all 6 prior cross-reference files' status from "blocked" to "done" once live | `[ ]` | all above |
+| 12 | Admin tenant management page (list/create/view tenant, resource usage) using the already-scaffolded `frontend/src/app/dashboard/tenants/components/{TenantList,TenantDetail,TenantCreateForm}.tsx` — needs a matching `tenants.py` router (`GET/POST /api/v1/tenants`, `GET /api/v1/tenants/{id}`, `GET /api/v1/tenants/{id}/users`, `GET /api/v1/tenants/{id}/resources`) and `page.tsx` entry point | `[ ]` | 01, 03 |
 
 ## Confidence per task (once unblocked)
 
@@ -54,3 +54,9 @@
   RLS recommended, full table inventory (11 root + 13 child), data model + auth sketch, 5 open
   questions for Security/Product. This INDEX drafted alongside it. No code changed — per user
   decision, this session's deliverable is the decision + spec, not implementation.
+- 2026-07-13 — ADR signed off: Option A confirmed, 1:1 tenant-per-user, no cross-tenant ops
+  bypass, big-bang rollout, legacy data disposable. Epic unblocked from `[!]` to active. Added
+  Task #12 to reconcile the already-scaffolded `frontend/src/app/dashboard/tenants/` components
+  (built ahead of this ADR, calling endpoints that don't exist yet) with the now-final data model.
+  No implementation started yet in this session — Tasks #01-#12 remain `[ ]`; this session's
+  build focus is Pipelines → Schema Intel → Visualize per separate agreement with the user.

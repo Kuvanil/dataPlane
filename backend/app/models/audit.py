@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, JSON, BigInteger
+from sqlalchemy import Column, Index, Integer, String, Text, DateTime, ForeignKey, JSON, BigInteger
 from sqlalchemy.sql import func
 from app.core.database import Base
 
@@ -10,6 +10,16 @@ class AuditLog(Base):
     hash chain implementation (event_hash, prev_hash, sequence).
     """
     __tablename__ = "audit_log"
+    __table_args__ = (
+        # Composite indexes for AUDIT-T4's common query patterns — a
+        # single-column index on e.g. `actor` alone can't satisfy
+        # `WHERE actor = ? ORDER BY created_at DESC` without an extra sort.
+        Index("ix_audit_log_correlation_sequence", "correlation_id", "sequence"),
+        Index("ix_audit_log_actor_created_at", "actor", "created_at"),
+        Index("ix_audit_log_module_event_type_created_at", "module", "event_type", "created_at"),
+        Index("ix_audit_log_target_created_at", "target_type", "target_id", "created_at"),
+        Index("ix_audit_log_event_type_created_at", "event_type", "created_at"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
 
@@ -38,7 +48,10 @@ class AuditLog(Base):
     duration_ms = Column(Integer, nullable=True)
 
     # Metadata / payload
-    metadata = Column(JSON, nullable=True)  # Additional structured data
+    # NOTE: mapped attribute is `event_metadata`, not `metadata` — the latter
+    # is reserved by SQLAlchemy's declarative Base (Base.metadata). Column
+    # name stays "metadata" for readability in the DB.
+    event_metadata = Column("metadata", JSON, nullable=True)
 
     # Legacy fields (kept for backward compatibility)
     connection_id = Column(Integer, ForeignKey("connections.id", ondelete="SET NULL"), nullable=True)

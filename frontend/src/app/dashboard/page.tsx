@@ -146,7 +146,7 @@ export default function DashboardPage() {
       {/* Quick Actions */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         {[
-          { label: "Visualize Schema", icon: "🌐", href: "/dashboard/visualize", color: "from-blue-500/10 to-indigo-500/10 border-blue-500/20 hover:border-blue-500/40" },
+          { label: "Visualize Schema", icon: "🌐", href: "/dashboard/visualize/topology", color: "from-blue-500/10 to-indigo-500/10 border-blue-500/20 hover:border-blue-500/40" },
           { label: "Query Studio", icon: "💬", href: "/dashboard/query-studio", color: "from-emerald-500/10 to-teal-500/10 border-emerald-500/20 hover:border-emerald-500/40" },
           { label: "AskData Bot", icon: "🤖", href: "/dashboard/askdata", color: "from-violet-500/10 to-purple-500/10 border-violet-500/20 hover:border-violet-500/40" },
           { label: "Schema Mapper", icon: "🗺️", href: "/dashboard/schema-mapper", color: "from-amber-500/10 to-orange-500/10 border-amber-500/20 hover:border-amber-500/40" },
@@ -227,7 +227,7 @@ export default function DashboardPage() {
               );
             })}
           </div>
-          <Link href="/dashboard/visualize" className="mt-4 w-full py-2 bg-blue-600 hover:bg-blue-500 transition-colors rounded-xl text-sm font-semibold text-center block">
+          <Link href="/dashboard/visualize/topology" className="mt-4 w-full py-2 bg-blue-600 hover:bg-blue-500 transition-colors rounded-xl text-sm font-semibold text-center block">
             Open Visualizer →
           </Link>
         </DashboardWidget>

@@ -15,7 +15,10 @@ from app.api.routers import mappings as mappings_router
 from app.api.routers import schema_catalog as schema_catalog_router
 from app.api.routers import dashboard as dashboard_router
 from app.api.routers import semantic as semantic_router
+from app.api.routers import query_studio as query_studio_router
+from app.api.routers import viz as viz_router
 from app.core.celery_app import celery_app  # noqa: F401  (registers tasks on import)
+from app.core.audit_guard import install_audit_append_only_guard
 from app.core.config import settings
 from app.core.database import Base, engine, SessionLocal
 from app.models.connection import DBConnection  # ensure models loaded
@@ -34,6 +37,7 @@ from app.models.semantic import (  # noqa: F401  (DP-SEM-001 Task #1: ensure sem
 from app.models.mapping import (  # noqa: F401  (ensure mapping tables are created)
     Mapping, MappingVersion, FieldMapping, AISuggestion,
 )
+from app.models.saved_query import SavedQuery  # noqa: F401  (query_studio_tasks #6)
 
 # ── Structured logging setup ──────────────────────────────────────────────────
 logging.config.dictConfig({
@@ -61,6 +65,7 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # 1. Create tables
     Base.metadata.create_all(bind=engine)
+    install_audit_append_only_guard(engine)  # AUDIT-T3: DB-level append-only enforcement
 
     # 2. Seed physical dummy databases on filesystem for demo
     import sqlite3
@@ -245,6 +250,10 @@ async def lifespan(app: FastAPI):
     finally:
         db.close()
 
+    # 5. Register pipeline schedules with Celery beat (Pipelines Task #4)
+    from app.core.scheduler import setup_schedule_tasks
+    setup_schedule_tasks()
+
     yield
 
 app = FastAPI(
@@ -288,7 +297,8 @@ async def log_requests(request: Request, call_next):
 app.include_router(connectors.router, prefix="/api/v1/connectors", tags=["Connectors"])
 app.include_router(schema.router, prefix="/api/v1/schema", tags=["Schema Intelligence"])
 app.include_router(agent.router, prefix="/api/v1/agent", tags=["AI Agent"])
-app.include_router(query.router, prefix="/api/v1/query", tags=["Query Studio"])
+app.include_router(query.router, prefix="/api/v1/query", tags=["Query (Legacy NL2SQL)"])
+app.include_router(query_studio_router.router, prefix="/api/v1/query-studio", tags=["Query Studio"])
 app.include_router(askdata.router, prefix="/api/v1/askdata", tags=["AskData Bot"])
 app.include_router(mapper.router, prefix="/api/v1/mapper", tags=["Schema Mapper"])
 app.include_router(mappings_router.router, prefix="/api/v1/mappings", tags=["Schema Mapper — Mappings"])
@@ -300,6 +310,7 @@ app.include_router(auth_router.router, prefix="/api/v1/auth", tags=["Auth"])
 app.include_router(autopilot_router.router, prefix="/api/v1/autopilot", tags=["AI Autopilot"])
 app.include_router(dashboard_router.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 app.include_router(semantic_router.router, prefix="/api/v1/semantic", tags=["Semantic / Metrics"])
+app.include_router(viz_router.router, prefix="/api/v1/viz", tags=["Visualize"])
 
 @app.get("/health")
 def health_check():

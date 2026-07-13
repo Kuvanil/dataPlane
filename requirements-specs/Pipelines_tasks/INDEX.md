@@ -34,16 +34,29 @@
 |----|---|---|---|
 | FR1 | Create pipeline from source/target/published mapping | DONE (commit `3866c7e`) | #1 |
 | FR2 | Drift validation pre-run | DONE (commit `3866c7e`; hardening bugs #15–#18) | #2 |
-| FR3 | Manual run | NOT DONE — spec + design decisions ready | #3 |
-| FR4 | Cron schedule + enable/disable | NOT DONE — spec ready | #4 |
-| FR5 | Execute E-T-L, report status/progress/row counts | NOT DONE — spec ready | #3 |
-| FR6 | Run history (start/end, status, rows, errors) | PARTIAL — models + list endpoint exist; no runs are ever produced yet, single-run read path not exposed | #1, #6 |
-| FR7 | Configurable retry on transient failure | NOT DONE — model + spec ready | #5 |
-| FR8 | Re-run a past run | NOT DONE — spec ready | #6 |
-| FR9 | Audit events (create/edit/run/schedule/enable/disable) | PARTIAL — emitted on CRUD + drift check; run/schedule/enable-disable endpoints don't exist yet | #8 |
-| FR10 | Role-gate create/run/disable | PARTIAL — CRUD endpoints gated; run/disable endpoints don't exist yet; zero API-level gating tests | #8, #10 |
+| FR3 | Manual run | DONE (2026-07-13) — `POST /pipelines/{id}/run`, async via Celery, `PipelineExecutor` | #3 |
+| FR4 | Cron schedule + enable/disable | DONE (2026-07-13) — `PUT/DELETE/PATCH /pipelines/{id}/schedule*`, dynamic Celery beat via `app/core/scheduler.py` | #4 |
+| FR5 | Execute E-T-L, report status/progress/row counts | DONE (2026-07-13) — scoped to "direct" single-source transformations, see Task #3 note below | #3 |
+| FR6 | Run history (start/end, status, rows, errors) | DONE (2026-07-13) — `GET /pipelines/{id}/runs` (filterable) + `GET /pipelines/{id}/runs/{run_id}` with step detail | #1, #6 |
+| FR7 | Configurable retry on transient failure | DONE (2026-07-13) — `PUT /pipelines/{id}/retry-policy`, error classification in `app/workers/pipeline_tasks.py` | #5 |
+| FR8 | Re-run a past run | DONE (2026-07-13) — `POST /pipelines/{id}/runs/{run_id}/rerun`, `parent_run_id` lineage | #6 |
+| FR9 | Audit events (create/edit/run/schedule/enable/disable) | DONE (2026-07-13) — all new mutating endpoints emit via `record_audit` | #8 |
+| FR10 | Role-gate create/run/disable | DONE (2026-07-13) — role matrix enforced + API-level TestClient role-gating tests | #8, #10 |
 
-**2 of 10 FRs done (FR1, FR2). Everything else is spec-ready, not built.**
+**10 of 10 FRs landed (2026-07-13), with one documented scope decision: FR5's execution
+engine only executes field mappings whose `transformation.kind == "direct"` (straight
+column-to-column copy). `transformation_grammar.compile_sql`'s positional-placeholder scheme
+interleaves literal and source-column bindings in a way designed for single-shot query preview,
+not per-row batch ETL — building a parallel binding scheme for the highest-risk task in this
+directory (data movement) without a way to verify it independently was judged not worth the
+risk. Non-"direct" transformations fail the run with an actionable error naming the offending
+columns rather than move data that might be silently wrong. Follow-up: extend the executor to
+compile non-direct transformations once there's a tested binding-order contract to build against.
+Also scoped down from the original spec: Task #9's queue-and-auto-dispatch daemon was not built —
+only the 409-on-active-run guard landed; a queued run that waits for the active one to finish is
+a documented follow-up, not a silent gap (see task #9 note below). Oracle/JDBC targets are not
+yet supported for real row movement (same scope as the legacy executor); they fail clearly rather
+than attempt an unverified code path.**
 
 ## Status legend
 - `[ ]` not started
@@ -61,14 +74,14 @@
 |---|---|---|---|
 | [01](01_pipeline_data_model.md) | FR1, FR6, §11 | [x] | Pipeline data model + persistence (commit `3866c7e`) |
 | [02](02_drift_validation.md) | FR2, AC2 | [x] | Drift validation pre-run (commit `3866c7e`; hardening in bugs #15–#18) |
-| [03](03_execution_engine.md) | FR3, FR5, AC1 | [~] | Execution engine (E-T-L) — **spec + design decisions written, no code** |
-| [04](04_scheduler.md) | FR4, AC3 | [~] | Scheduler (cron) — spec written, no code |
-| [05](05_retry_failure_handling.md) | FR7, AC4 | [~] | Retry + failure handling — spec written, no code |
-| [06](06_run_history_rerun.md) | FR6, FR8 | [~] | Run history + re-run — spec written; only list-runs endpoint exists, no runs producible yet |
-| [07](07_pipeline_ui_monitoring.md) | FR1, FR3, FR4, FR6 | [ ] | Pipeline UI + monitoring |
-| [08](08_audit_role_gating.md) | FR9, FR10 | [~] | Audit emission + role gating — done for CRUD surface; run/schedule endpoints pending |
-| [09](09_concurrency_and_queueing.md) | Scalability NFR, Risk table | [~] | Concurrency control / run queueing — spec written, no code; **gap, not in original TRD subtask table** |
-| [10](10_tests.md) | §12 DoD | [ ] | Test suite (now explicitly includes API-level role-gating tests, per Bug #19 item 6) |
+| [03](03_execution_engine.md) | FR3, FR5, AC1 | [x] | Execution engine (E-T-L) — landed 2026-07-13, `app/services/pipeline_executor.py` + `app/workers/pipeline_tasks.py`; scoped to "direct" transformations (see FR5 note above) |
+| [04](04_scheduler.md) | FR4, AC3 | [x] | Scheduler (cron) — landed 2026-07-13, `app/core/scheduler.py`, dynamic Celery beat registration |
+| [05](05_retry_failure_handling.md) | FR7, AC4 | [x] | Retry + failure handling — landed 2026-07-13, error classification + per-pipeline policy in `app/workers/pipeline_tasks.py` |
+| [06](06_run_history_rerun.md) | FR6, FR8 | [x] | Run history + re-run — landed 2026-07-13, filterable list, step detail, `POST /runs/{id}/rerun` |
+| [07](07_pipeline_ui_monitoring.md) | FR1, FR3, FR4, FR6 | [ ] | Pipeline UI + monitoring — backend ready, frontend rebuild in progress |
+| [08](08_audit_role_gating.md) | FR9, FR10 | [x] | Audit emission + role gating — landed 2026-07-13 for all new endpoints; API-level role-gating tests in `tests/pipelines/test_router_role_gating.py` |
+| [09](09_concurrency_and_queueing.md) | Scalability NFR, Risk table | [~] | Concurrency guard (409 on active run) landed 2026-07-13; the queue-and-auto-dispatch daemon was scoped out as a follow-up (see FR5 note above) — a run requested while one is active is rejected, not queued |
+| [10](10_tests.md) | §12 DoD | [x] | Test suite — `test_execution_engine.py`, `test_scheduler.py`, `test_retry_and_rerun.py`, `test_router_role_gating.py` (26 new tests, 81/81 green in `tests/pipelines/`) |
 | [11](11_secret_vaulting_signoff.md) | Security NFR, §9 | [!] | Credential vaulting sign-off — cross-reference, owned by Connectors, not a new task |
 
 ## Bugs (2026-07-06 code review of commit `3866c7e`)
@@ -180,3 +193,12 @@
     API-level role-gating tests added to Task #10's scope.
   Caveat: role gating on pipeline endpoints is still only asserted by code inspection — API-level
   tests remain Task #10 work.
+- 2026-07-13 — Tasks #3–#6, #8 landed; #9's concurrency guard landed (queueing scoped out, see
+  FR5/FR9 notes above); #10's test suite landed (26 new tests). New files:
+  `app/services/pipeline_executor.py`, `app/workers/pipeline_tasks.py`, `app/core/scheduler.py`.
+  Modified: `pipeline_service.py` (PipelineCRUD.create_run/get_run/upsert_schedule/
+  delete_schedule/toggle_schedule/upsert_retry_policy, default retry policy on create),
+  `routers/pipelines.py` (7 new endpoints), `celery_app.py` (registered pipeline_tasks),
+  `main.py` (calls `setup_schedule_tasks()` at startup), `requirements.txt` (added `croniter`).
+  Full backend suite: 507/507 passing. Task #7 (frontend) is the only remaining backend-facing
+  gap — proceeding to it next in this session.

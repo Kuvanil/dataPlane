@@ -3,13 +3,14 @@ import io
 import json
 import logging
 from datetime import datetime
-from typing import Optional
+from typing import Iterator, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.models.audit import AuditLog
 from app.schemas.audit import (
@@ -22,10 +23,27 @@ from app.schemas.audit import (
     IntegrityVerificationResult,
     RetentionStatus,
 )
-from app.services.audit_helper import emit_audit_event, verify_hash_chain
+from app.services.audit_helper import (
+    AuditBufferFullError,
+    ingest_audit_event_durable,
+    verify_hash_chain,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
+
+# Allow-list for `sort_by` (AUDIT-T4) — `getattr(AuditLog, sort_by)` on an
+# unvalidated query param would let a caller sort by any attribute of the
+# class, including non-column ones, which can 500 the request.
+_SORTABLE_COLUMNS = {
+    "created_at": AuditLog.created_at,
+    "sequence": AuditLog.sequence,
+    "event_type": AuditLog.event_type,
+    "actor": AuditLog.actor,
+    "module": AuditLog.module,
+    "outcome": AuditLog.outcome,
+    "duration_ms": AuditLog.duration_ms,
+}
 
 
 # ── Ingestion ─────────────────────────────────────────────────────────────
@@ -35,16 +53,23 @@ router = APIRouter()
 def ingest_events(batch: AuditEventBatchRequest, db: Session = Depends(get_db)):
     """Batch ingestion of audit events (AUDIT-T2).
 
-    Accepts up to 100 events per request. Each event is validated individually;
-    invalid events are rejected without blocking the valid ones.
+    Accepts up to settings.AUDIT_INGEST_BATCH_MAX events per request. Each
+    event is validated and written individually; a DB write failure falls
+    back to the durable buffer (see app.core.audit_buffer) instead of losing
+    the event, so it still counts as accepted. Only when that fallback
+    buffer is also full does an event get rejected as backpressure — and if
+    every event in the batch hits that, the whole request is rejected with
+    503 so the caller retries the batch later rather than losing part of it
+    silently.
     """
     accepted = 0
     rejected = 0
+    buffer_full_count = 0
     errors = []
 
     for event in batch.events:
         try:
-            emit_audit_event(
+            ingest_audit_event_durable(
                 db=db,
                 event_type=event.event_type,
                 actor=event.actor,
@@ -65,11 +90,22 @@ def ingest_events(batch: AuditEventBatchRequest, db: Session = Depends(get_db)):
                 status=event.status,
             )
             accepted += 1
+        except AuditBufferFullError as exc:
+            rejected += 1
+            buffer_full_count += 1
+            errors.append({"event_type": event.event_type, "error": str(exc)})
         except Exception as exc:
             rejected += 1
             errors.append({"event_type": event.event_type, "error": str(exc)})
 
     db.commit()
+
+    if accepted == 0 and buffer_full_count == len(batch.events) and buffer_full_count > 0:
+        raise HTTPException(
+            status_code=503,
+            detail="Audit ingestion is backpressured — durability buffer is full",
+            headers={"Retry-After": "5"},
+        )
 
     return AuditEventBatchResponse(
         accepted=accepted,
@@ -95,14 +131,18 @@ def search_events(
     date_from: Optional[str] = Query(None),
     date_to: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
-    sort_by: str = Query("created_at"),
-    sort_order: str = Query("desc"),
+    sort_by: Optional[str] = Query(None),
+    sort_order: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
     """Search/filter audit events (AUDIT-T4).
 
     Supports filtering by actor, module, event_type, target, correlation_id,
     outcome, and date range. Full-text search on summary and event_type.
+
+    When correlation_id is given and the caller didn't request a specific
+    sort, results default to sequence-ascending — the order a correlation
+    trace actually happened in, not most-recent-first.
     """
     q = db.query(AuditLog)
 
@@ -145,9 +185,12 @@ def search_events(
     # Total count before pagination
     total = q.count()
 
-    # Sorting
-    sort_col = getattr(AuditLog, sort_by, AuditLog.created_at)
-    if sort_order == "asc":
+    # Sorting — correlation_id implies chain tracing, defaults to
+    # sequence-ascending unless the caller overrides it.
+    effective_sort_by = sort_by or ("sequence" if correlation_id else "created_at")
+    effective_sort_order = sort_order or ("asc" if correlation_id else "desc")
+    sort_col = _SORTABLE_COLUMNS.get(effective_sort_by, AuditLog.created_at)
+    if effective_sort_order == "asc":
         q = q.order_by(sort_col.asc())
     else:
         q = q.order_by(sort_col.desc())
@@ -270,27 +313,27 @@ def verify_integrity(db: Session = Depends(get_db)):
 
 # ── Export (AUDIT-T6) ─────────────────────────────────────────────────────
 
+_EXPORT_CSV_HEADERS = [
+    "id", "event_type", "actor", "module", "target_type", "target_id",
+    "target_name", "correlation_id", "outcome", "summary",
+    "duration_ms", "sequence", "created_at",
+]
 
-@router.get("/export")
-def export_events(
-    format: str = Query("csv", regex="^(csv|json)$"),
-    actor: Optional[str] = Query(None),
-    module: Optional[str] = Query(None),
-    event_type: Optional[str] = Query(None),
-    target_type: Optional[str] = Query(None),
-    correlation_id: Optional[str] = Query(None),
-    outcome: Optional[str] = Query(None),
-    date_from: Optional[str] = Query(None),
-    date_to: Optional[str] = Query(None),
-    search: Optional[str] = Query(None),
-    db: Session = Depends(get_db),
+
+def _apply_audit_filters(
+    q,
+    actor: Optional[str] = None,
+    module: Optional[str] = None,
+    event_type: Optional[str] = None,
+    target_type: Optional[str] = None,
+    correlation_id: Optional[str] = None,
+    outcome: Optional[str] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    search: Optional[str] = None,
 ):
-    """Export filtered audit events as CSV or JSON (AUDIT-T6).
-
-    Uses the same filter parameters as the search endpoint.
-    """
-    q = db.query(AuditLog)
-
+    """Shared filter logic for search (AUDIT-T4) and export (AUDIT-T6) — the
+    task spec requires export to accept the same filter parameters."""
     if actor:
         q = q.filter(AuditLog.actor == actor)
     if module:
@@ -305,71 +348,75 @@ def export_events(
         q = q.filter(AuditLog.outcome == outcome)
     if date_from:
         try:
-            dt_from = datetime.fromisoformat(date_from)
-            q = q.filter(AuditLog.created_at >= dt_from)
+            q = q.filter(AuditLog.created_at >= datetime.fromisoformat(date_from))
         except ValueError:
             pass
     if date_to:
         try:
-            dt_to = datetime.fromisoformat(date_to)
-            q = q.filter(AuditLog.created_at <= dt_to)
+            q = q.filter(AuditLog.created_at <= datetime.fromisoformat(date_to))
         except ValueError:
             pass
     if search:
-        search_term = f"%{search}%"
-        q = q.filter(AuditLog.summary.ilike(search_term))
-
-    q = q.order_by(AuditLog.created_at.desc()).limit(100000)  # Max export limit
-    events = q.all()
-
-    if format == "csv":
-        return _export_csv(events)
-    else:
-        return _export_json(events)
+        q = q.filter(AuditLog.summary.ilike(f"%{search}%"))
+    return q
 
 
-def _export_csv(events: list) -> StreamingResponse:
-    """Export events as CSV."""
-    output = io.StringIO()
-    writer = csv.writer(output)
+def _stream_export_rows(
+    actor, module, event_type, target_type, correlation_id, outcome,
+    date_from, date_to, search,
+):
+    """Yield matching AuditLog rows from a dedicated session, batched via
+    yield_per so the full result set is never materialized in memory.
 
-    headers = [
-        "id", "event_type", "actor", "module", "target_type", "target_id",
-        "target_name", "correlation_id", "outcome", "summary",
-        "duration_ms", "sequence", "created_at",
-    ]
-    writer.writerow(headers)
+    Opens its own session rather than reusing the request's `Depends(get_db)`
+    session: that session is closed by FastAPI as soon as the endpoint
+    function returns, which happens as soon as the StreamingResponse is
+    constructed — *before* this generator (which runs afterwards, as the
+    response body streams) gets to iterate it. Using a separate session
+    scoped to this generator's own lifetime avoids querying through an
+    already-closed session mid-stream.
+    """
+    from app.core.database import SessionLocal
 
-    for e in events:
+    db = SessionLocal()
+    try:
+        q = db.query(AuditLog)
+        q = _apply_audit_filters(
+            q, actor, module, event_type, target_type, correlation_id,
+            outcome, date_from, date_to, search,
+        )
+        q = (
+            q.order_by(AuditLog.created_at.desc())
+            .limit(settings.AUDIT_EXPORT_MAX_ROWS)
+            .execution_options(stream_results=True)  # real server-side cursor on Postgres
+        )
+        for row in q.yield_per(1000):
+            yield row
+    finally:
+        db.close()
+
+
+def _stream_csv(rows) -> Iterator[str]:
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(_EXPORT_CSV_HEADERS)
+    yield buf.getvalue()
+
+    for e in rows:
+        buf.seek(0)
+        buf.truncate(0)
         writer.writerow([
-            e.id,
-            e.event_type,
-            e.actor,
-            e.module or "",
-            e.target_type or "",
-            e.target_id or "",
-            e.target_name or "",
-            e.correlation_id or "",
-            e.outcome,
-            e.summary or "",
-            e.duration_ms or "",
-            e.sequence or "",
+            e.id, e.event_type, e.actor, e.module or "", e.target_type or "",
+            e.target_id or "", e.target_name or "", e.correlation_id or "",
+            e.outcome, e.summary or "", e.duration_ms or "", e.sequence or "",
             e.created_at.isoformat() if e.created_at else "",
         ])
-
-    output.seek(0)
-    return StreamingResponse(
-        iter([output.getvalue()]),
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=audit_export.csv"},
-    )
+        yield buf.getvalue()
 
 
-def _export_json(events: list) -> StreamingResponse:
-    """Export events as newline-delimited JSON."""
-    lines = []
-    for e in events:
-        data = {
+def _stream_ndjson(rows) -> Iterator[str]:
+    for e in rows:
+        yield json.dumps({
             "id": e.id,
             "event_type": e.event_type,
             "actor": e.actor,
@@ -384,13 +431,44 @@ def _export_json(events: list) -> StreamingResponse:
             "sequence": e.sequence,
             "event_hash": e.event_hash,
             "created_at": e.created_at.isoformat() if e.created_at else None,
-        }
-        lines.append(json.dumps(data))
+        }) + "\n"
 
+
+@router.get("/export")
+def export_events(
+    format: str = Query("csv", regex="^(csv|json)$"),
+    actor: Optional[str] = Query(None),
+    module: Optional[str] = Query(None),
+    event_type: Optional[str] = Query(None),
+    target_type: Optional[str] = Query(None),
+    correlation_id: Optional[str] = Query(None),
+    outcome: Optional[str] = Query(None),
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    search: Optional[str] = Query(None),
+):
+    """Export filtered audit events as CSV or JSON (AUDIT-T6).
+
+    Uses the same filter parameters as the search endpoint. Streams rows
+    from the DB via yield_per instead of loading the full result set into
+    memory, capped at settings.AUDIT_EXPORT_MAX_ROWS.
+    """
+    rows = _stream_export_rows(
+        actor, module, event_type, target_type, correlation_id, outcome,
+        date_from, date_to, search,
+    )
+    today = datetime.utcnow().strftime("%Y-%m-%d")
+
+    if format == "csv":
+        return StreamingResponse(
+            _stream_csv(rows),
+            media_type="text/csv",
+            headers={"Content-Disposition": f'attachment; filename="audit_export_{today}.csv"'},
+        )
     return StreamingResponse(
-        iter(["\n".join(lines)]),
+        _stream_ndjson(rows),
         media_type="application/x-ndjson",
-        headers={"Content-Disposition": "attachment; filename=audit_export.jsonl"},
+        headers={"Content-Disposition": f'attachment; filename="audit_export_{today}.jsonl"'},
     )
 
 
@@ -400,9 +478,7 @@ def _export_json(events: list) -> StreamingResponse:
 @router.get("/retention-status", response_model=RetentionStatus)
 def get_retention_status(db: Session = Depends(get_db)):
     """Get current retention policy status (AUDIT-T7)."""
-    from app.core.config import settings
-
-    retention_days = getattr(settings, "AUDIT_RETENTION_DAYS", 90)
+    retention_days = settings.AUDIT_RETENTION_DAYS
     total = db.query(func.count(AuditLog.id)).scalar() or 0
 
     cutoff = datetime.utcnow()
