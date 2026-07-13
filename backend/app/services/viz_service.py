@@ -16,8 +16,10 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.models.connection import DBConnection
+from app.models.security import MaskingPolicy, RowAccessPolicy
 from app.models.viz import VizView
 from app.services.audit_helper import record_audit
+from app.services.rbac_service import MaskingPolicyCRUD
 from app.services.schema_service import get_connector
 
 logger = logging.getLogger(__name__)
@@ -26,6 +28,13 @@ _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 MAX_ROWS = 5000
 
 _AGG_SQL = {"sum": "SUM", "avg": "AVG", "count": "COUNT", "min": "MIN", "max": "MAX"}
+
+# Row-access policy operators (SEC-T4) -- distinct from the eq/neq/... set
+# viz's own FilterBar uses (_OPERATOR_SQL below), because policies are
+# authored via the Security admin page's builder, which speaks "=", "!=", etc.
+_POLICY_OPERATOR_SQL = {
+    "=": "=", "!=": "!=", ">": ">", "<": "<", ">=": ">=", "<=": "<=",
+}
 
 
 def _validate_identifier(name: str, *, kind: str) -> str:
@@ -54,6 +63,7 @@ class VizService:
     def run_query(
         db: Session, *, connection_id: int, table_name: str,
         dimensions: List[str], measures: List[Dict[str, Any]], filters: List[Dict[str, Any]],
+        requester_role: Optional[str] = None,
     ) -> Dict[str, Any]:
         conn = db.query(DBConnection).filter(
             DBConnection.id == connection_id, DBConnection.is_deleted == False,  # noqa: E712
@@ -103,6 +113,41 @@ class VizService:
                 where_clauses.append(f"{field_sql} {_OPERATOR_SQL[op]} {ph}")
                 params.append(value)
 
+        # Row-level access filters (SEC-T4, FR5) — ANDed onto the user's own
+        # filters, scoped to policies that name this connection+table and
+        # apply to the requester's role. Deny-by-default doesn't apply here
+        # (absence of a policy means unfiltered, matching every other
+        # module's "no policy defined yet" behavior), but any policy that
+        # DOES name this role is enforced unconditionally — the caller
+        # cannot opt out via the filters it sends.
+        if requester_role:
+            row_policies = (
+                db.query(RowAccessPolicy)
+                .filter(RowAccessPolicy.connection_id == connection_id, RowAccessPolicy.table_name == table_name)
+                .all()
+            )
+            for policy in row_policies:
+                if requester_role not in (policy.applies_to_roles or []):
+                    continue
+                clause_parts: List[str] = []
+                for i, cond in enumerate(policy.filter_conditions or []):
+                    _validate_identifier(cond["field"], kind="row-policy filter field")
+                    field_sql = q(cond["field"])
+                    op_sql = _POLICY_OPERATOR_SQL.get(cond["operator"])
+                    if op_sql:
+                        clause_parts.append(f"{field_sql} {op_sql} {ph}" if i == 0 else
+                                             f"{cond.get('logic', 'AND')} {field_sql} {op_sql} {ph}")
+                        params.append(cond["value"])
+                    elif cond["operator"] in ("in", "not in"):
+                        values = cond["value"] if isinstance(cond["value"], list) else [cond["value"]]
+                        placeholders = ", ".join([ph] * len(values))
+                        not_kw = "NOT " if cond["operator"] == "not in" else ""
+                        prefix = "" if i == 0 else f"{cond.get('logic', 'AND')} "
+                        clause_parts.append(f"{prefix}{field_sql} {not_kw}IN ({placeholders})")
+                        params.extend(values)
+                if clause_parts:
+                    where_clauses.append("(" + " ".join(clause_parts) + ")")
+
         sql = f"SELECT {', '.join(select_parts)} FROM {q(table_name)}"
         if where_clauses:
             sql += " WHERE " + " AND ".join(where_clauses)
@@ -139,6 +184,30 @@ class VizService:
 
         truncated = len(raw_rows) > MAX_ROWS
         rows = [list(r) for r in raw_rows[:MAX_ROWS]]
+
+        # Column-level PII masking (SEC-T3, FR4/AC2) — masks dimension
+        # columns whose name matches a MaskingPolicy for this
+        # connection+table, unless the requester's role is exempt.
+        # Measure aliases (e.g. "sum_amount") never match a raw column
+        # name, so aggregated values are never masked — only the raw
+        # dimension values they're grouped by can be.
+        if requester_role:
+            masking_policies = {
+                p.column_name: p
+                for p in db.query(MaskingPolicy).filter(
+                    MaskingPolicy.connection_id == connection_id, MaskingPolicy.table_name == table_name,
+                ).all()
+            }
+            masked_indexes = {
+                idx: masking_policies[col]
+                for idx, col in enumerate(columns)
+                if col in masking_policies and requester_role not in (masking_policies[col].exempt_roles or [])
+            }
+            if masked_indexes:
+                for row in rows:
+                    for idx, policy in masked_indexes.items():
+                        row[idx] = MaskingPolicyCRUD.apply_masking(row[idx], policy.masking_type)
+
         return {"columns": columns, "rows": rows, "row_count": len(rows), "truncated": truncated}
 
     # ── Saved views (VIZ-T5) ─────────────────────────────────────────────

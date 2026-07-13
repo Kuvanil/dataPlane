@@ -150,6 +150,22 @@ export const api = {
       throw new ApiError(res.status, body?.detail ?? res.statusText);
     }
   },
+
+  /** Like delete(), but returns the parsed JSON body — for endpoints (e.g.
+   * "delete with dependency warning") that respond 200 with a body instead
+   * of 204, whose caller needs to branch on that body. */
+  async deleteWithResponse<T>(path: string): Promise<T> {
+    const res = await fetch(`${API_BASE}${path}`, {
+      method: "DELETE",
+      headers: authHeaders(false),
+    });
+    if (res.status === 401) { handle401(); throw new ApiError(401, "Unauthorized"); }
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      throw new ApiError(res.status, body?.detail ?? res.statusText);
+    }
+    return res.json() as Promise<T>;
+  },
 };
 
 export class ApiError extends Error {

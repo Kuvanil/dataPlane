@@ -1,87 +1,130 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { api } from "@/lib/api";
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useSecurity } from "./hooks/useSecurity";
+import { classNames } from "./lib/format";
 
-interface DamaMeta { data_owner: string; data_steward: string; retention: string; }
-interface Classification { label: string; level: string; policy: string; color: string; dama_metadata: DamaMeta; }
-interface Item { column: string; classification: Classification; }
-interface ClassifyResponse { classifications: Record<string, Item[]>; }
+import RoleList from "./components/RoleList";
+import RolePermissionMatrix from "./components/RolePermissionMatrix";
+import UserRoleAssignment from "./components/UserRoleAssignment";
+import MaskingPolicyEditor from "./components/MaskingPolicyEditor";
+import RowFilterEditor from "./components/RowFilterEditor";
+import SecurityAuditLog from "./components/SecurityAuditLog";
+import Toast from "./components/Toast";
 
-const COLOR_MAP: Record<string, string> = {
-  red:   "bg-red-500/10 text-red-500 border-red-500/20",
-  amber: "bg-amber-500/10 text-amber-500 border-amber-500/20",
-  green: "bg-green-500/10 text-green-500 border-green-500/20",
-};
+const TABS = [
+  { key: "roles", label: "Roles" },
+  { key: "permissions", label: "Permissions" },
+  { key: "users", label: "Users" },
+  { key: "masking", label: "Masking" },
+  { key: "row-filters", label: "Row Filters" },
+  { key: "audit", label: "Audit" },
+] as const;
+type TabKey = (typeof TABS)[number]["key"];
 
 export default function SecurityPage() {
-  const [classifications, setClassifications] = useState<Record<string, Item[]>>({});
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const s = useSecurity();
+  const [activeTab, setActiveTab] = useState<TabKey>("roles");
 
-  useEffect(() => {
-    api.get<ClassifyResponse>("/api/v1/schema/1/classify")
-      .then(data => setClassifications(data.classifications ?? {}))
-      .catch(err => console.error("Failed to fetch classification:", err))
-      .finally(() => setLoading(false));
-  }, []);
-
-  const colorMap = COLOR_MAP;
+  const isAdmin = s.role === "admin";
 
   return (
     <div className="p-8 flex flex-col gap-6 h-full">
       <div className="flex justify-between items-center bg-zinc-900/40 p-5 rounded-2xl border border-zinc-800 backdrop-blur-sm">
         <div>
-          <h3 className="text-lg font-semibold text-zinc-200">Data Governance & PII Protection</h3>
-          <p className="text-xs text-zinc-500">Classified assets mapped directly conforming with DAMA Metadata dimensions stewardship policies.</p>
+          <h3 className="text-lg font-semibold text-zinc-200">Security Administration</h3>
+          <p className="text-xs text-zinc-500">
+            Roles, permissions, data-protection policies (masking + row-level access), and the security audit trail.
+            {!isAdmin && " You're viewing in read-only mode — only admins can change roles or policies."}
+          </p>
         </div>
-        <button className="px-4 py-2 text-sm font-semibold text-zinc-950 bg-white rounded-xl hover:bg-zinc-200 transition-all flex items-center gap-2">
-          🛡️ Run Audit Scan
+        <button
+          onClick={() => router.push("/dashboard/schema")}
+          className="px-4 py-2 text-sm font-semibold text-zinc-300 bg-zinc-800 rounded-xl hover:bg-zinc-700 transition-all flex items-center gap-2"
+        >
+          🔍 PII Classifications (Schema Intel) →
         </button>
       </div>
 
-      {loading ? (
-        <div className="flex items-center justify-center flex-1 text-zinc-500 text-sm">Scanning classifications...</div>
-      ) : (
-        <div className="flex flex-col gap-4">
-          {Object.keys(classifications).map((tableName) => (
-            <div key={tableName} className="rounded-2xl border border-zinc-800 bg-zinc-900/30 overflow-hidden backdrop-blur-sm">
-              <div className="p-4 bg-zinc-900/50 border-b border-zinc-800 flex items-center gap-2">
-                <span className="text-xs font-semibold text-zinc-500">Table:</span>
-                <span className="text-sm font-bold text-zinc-300 font-mono">{tableName}</span>
-              </div>
-              <table className="w-full text-left border-collapse text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-800 bg-zinc-950/40">
-                    <th className="p-3 font-semibold text-zinc-400">Column</th>
-                    <th className="p-3 font-semibold text-zinc-400">Classification</th>
-                    <th className="p-3 font-semibold text-zinc-400">Steward</th>
-                    <th className="p-3 font-semibold text-zinc-400">Owner</th>
-                    <th className="p-3 font-semibold text-zinc-400">Retention</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {classifications[tableName].map((c: Item, i: number) => {
-                    const meta = c.classification.dama_metadata;
-                    return (
-                      <tr key={i} className="border-b border-zinc-800/60 hover:bg-zinc-800/10 transition-colors">
-                        <td className="p-3 font-mono text-xs text-zinc-200">{c.column}</td>
-                        <td className="p-3">
-                          <span className={`text-xs font-semibold px-2 py-0.5 rounded-full border ${colorMap[c.classification.color]}`}>
-                            {c.classification.label}
-                          </span>
-                        </td>
-                        <td className="p-3 text-xs text-zinc-400">{meta?.data_steward || "-"}</td>
-                        <td className="p-3 text-xs text-zinc-500">{meta?.data_owner || "-"}</td>
-                        <td className="p-3 text-xs text-zinc-400 italic font-mono">{meta?.retention || "-"}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="flex border-b border-zinc-800">
+        {TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={classNames(
+              "px-4 py-2 text-sm transition-colors",
+              activeTab === tab.key
+                ? "text-zinc-100 border-b-2 border-blue-500 font-semibold"
+                : "text-zinc-500 hover:text-zinc-300",
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      <div className="flex-1 overflow-y-auto">
+        {activeTab === "roles" && (
+          <RoleList
+            role={s.role}
+            roles={s.roles}
+            loading={s.rolesLoading}
+            error={s.rolesError}
+            onCreate={s.createRole}
+            onUpdate={s.updateRole}
+            onDelete={s.deleteRole}
+          />
+        )}
+        {activeTab === "permissions" && (
+          <RolePermissionMatrix
+            role={s.role}
+            roles={s.roles}
+            permissions={s.permissions}
+            getRolePermissionIds={s.getRolePermissionIds}
+            onSave={s.setRolePermissions}
+          />
+        )}
+        {activeTab === "users" && (
+          <UserRoleAssignment
+            role={s.role}
+            users={s.users}
+            loading={s.usersLoading}
+            roles={s.roles}
+            onAssign={s.assignUserRole}
+            onRevoke={s.revokeUserRole}
+            getEffectivePermissions={s.getEffectivePermissions}
+          />
+        )}
+        {activeTab === "masking" && (
+          <MaskingPolicyEditor
+            role={s.role}
+            connections={s.connections}
+            policies={s.maskingPolicies}
+            loading={s.maskingLoading}
+            roles={s.roles}
+            onCreate={s.createMaskingPolicy}
+            onDelete={s.deleteMaskingPolicy}
+          />
+        )}
+        {activeTab === "row-filters" && (
+          <RowFilterEditor
+            role={s.role}
+            connections={s.connections}
+            policies={s.rowPolicies}
+            loading={s.rowPoliciesLoading}
+            roles={s.roles}
+            onCreate={s.createRowPolicy}
+            onDelete={s.deleteRowPolicy}
+          />
+        )}
+        {activeTab === "audit" && (
+          <SecurityAuditLog audit={s.audit} loading={s.auditLoading} onRefresh={s.fetchAudit} />
+        )}
+      </div>
+
+      <Toast toast={s.toast} onDismiss={s.clearToast} />
     </div>
   );
 }

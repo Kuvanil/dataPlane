@@ -17,6 +17,10 @@ from app.api.routers import dashboard as dashboard_router
 from app.api.routers import semantic as semantic_router
 from app.api.routers import query_studio as query_studio_router
 from app.api.routers import viz as viz_router
+from app.api.routers import roles as roles_router
+from app.api.routers import users_admin as users_admin_router
+from app.api.routers import policies as policies_router
+from app.api.routers import authz as authz_router
 from app.core.celery_app import celery_app  # noqa: F401  (registers tasks on import)
 from app.core.audit_guard import install_audit_append_only_guard
 from app.core.config import settings
@@ -38,6 +42,9 @@ from app.models.mapping import (  # noqa: F401  (ensure mapping tables are creat
     Mapping, MappingVersion, FieldMapping, AISuggestion,
 )
 from app.models.saved_query import SavedQuery  # noqa: F401  (query_studio_tasks #6)
+from app.models.security import (  # noqa: F401  (DP-SEC-001: RBAC + policy tables)
+    Role, Permission, RolePermission, UserRole, MaskingPolicy, RowAccessPolicy,
+)
 
 # ── Structured logging setup ──────────────────────────────────────────────────
 logging.config.dictConfig({
@@ -254,6 +261,19 @@ async def lifespan(app: FastAPI):
     from app.core.scheduler import setup_schedule_tasks
     setup_schedule_tasks()
 
+    # 6. Seed RBAC permission catalog + default roles, backfill existing
+    #    users onto their matching role (DP-SEC-001, SEC-T1)
+    from app.services.rbac_service import (
+        seed_permission_catalog, seed_default_roles, backfill_user_roles,
+    )
+    db = SessionLocal()
+    try:
+        seed_permission_catalog(db)
+        seed_default_roles(db)
+        backfill_user_roles(db)
+    finally:
+        db.close()
+
     yield
 
 app = FastAPI(
@@ -311,6 +331,10 @@ app.include_router(autopilot_router.router, prefix="/api/v1/autopilot", tags=["A
 app.include_router(dashboard_router.router, prefix="/api/v1/dashboard", tags=["Dashboard"])
 app.include_router(semantic_router.router, prefix="/api/v1/semantic", tags=["Semantic / Metrics"])
 app.include_router(viz_router.router, prefix="/api/v1/viz", tags=["Visualize"])
+app.include_router(roles_router.router, prefix="/api/v1/roles", tags=["Security — Roles"])
+app.include_router(users_admin_router.router, prefix="/api/v1/users", tags=["Security — Users"])
+app.include_router(policies_router.router, prefix="/api/v1/policies", tags=["Security — Policies"])
+app.include_router(authz_router.router, prefix="/api/v1/authz", tags=["Security — AuthZ"])
 
 @app.get("/health")
 def health_check():

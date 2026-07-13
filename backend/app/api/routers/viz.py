@@ -21,13 +21,14 @@ router = APIRouter()
 def run_query(
     req: VizQueryRequest,
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    user: User = Depends(get_current_user),
 ):
     result = VizService.run_query(
         db, connection_id=req.connection_id, table_name=req.table_name,
         dimensions=req.dimensions,
         measures=[m.model_dump() for m in req.measures],
         filters=[f.model_dump() for f in req.filters],
+        requester_role=user.role,
     )
     return VizQueryResponse(**result)
 

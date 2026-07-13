@@ -1,8 +1,11 @@
 # ADR — App-Wide Tenant Isolation Model
 
 **Status:** Accepted (2026-07-13) — Option A (row-level `tenant_id` + Postgres RLS), signed off
-answers to all 5 open questions below. **No code implements this yet; see
-[INDEX.md](INDEX.md) for the execution order.**
+answers to all 5 open questions in §8. **No code implements this yet.** A same-day build attempt
+was aborted after design work revealed the real scope is a multi-session effort (stale table
+inventory, a non-superuser DB role requirement for RLS, SQLite-vs-Postgres testability, and a
+Celery tenant-context gap) — see §9 for findings and §10 for a proposed phased execution order.
+[INDEX.md](INDEX.md) still holds the original (now superseded-in-scope) task breakdown.
 
 **Supersedes (content-wise; those files now just point here):**
 `review_schema_mapper_tasks/CONTRADICTIONS.md` C4 (2026-07-03, the original finding) →
@@ -179,3 +182,82 @@ should point to; no engineering work is scheduled against it.
    backfill simplifies to: create one "default" tenant row, then either backfill all existing
    rows to it or drop and reseed — implementer's choice, since there's no real customer data to
    preserve.
+
+## 9. Scoping findings from an aborted build attempt (2026-07-13)
+
+An attempt to execute `INDEX.md`'s task list surfaced that the real engineering scope is
+substantially larger than this ADR (written 2026-07-09) and `INDEX.md` estimated. No code was
+written — these are findings from design work only, recorded here so the next session doesn't
+rediscover them from scratch.
+
+**9.1 The table inventory in §1 is stale.** It lists 11 root + 13 child = 24 tables. As of
+2026-07-13 the codebase has **39 tables** — Security Admin (`roles`, `permissions`,
+`role_permissions`, `user_roles`, `masking_policies`, `row_access_policies`), Visualize
+(`viz_views`), Semantic (`semantic_entities`/`dimensions`/`measures`/`metric_definitions`/
+`lineage`), Schema Intel (`column_profiles`, `column_classifications`), and Query Studio
+(`saved_queries`) all landed after this ADR was drafted. The root/child/global classification in
+§4 extends mechanically to these (root = owned directly by a tenant; child = reachable via a
+parent FK, denormalize per §4's existing reasoning; `permissions` is the one **global** table —
+it's a static module×action catalog, not tenant data) — re-deriving the model isn't the blocker,
+re-doing the *volume* of column/policy/service work for 39 tables instead of 24 is.
+
+**9.2 Genuine RLS enforcement requires a non-superuser Postgres role.** This repo's `api`/
+`worker`/`beat` containers all connect as the `postgres` superuser
+(`docker-compose.yml`'s `DATABASE_URL`). Postgres superusers unconditionally bypass RLS — no
+`FORCE ROW LEVEL SECURITY` setting or policy configuration overrides this. Making §2 Option A's
+RLS backstop real (not decorative) requires: a new non-superuser role (e.g. `dataplane_app`)
+created at boot, a second SQLAlchemy engine bound to it for the request-scoped runtime path,
+keeping the existing superuser engine for DDL (`create_all`) and a small set of legitimately
+tenant-agnostic "system" operations (boot-time seeding, login's pre-tenant-resolution user
+lookup, Celery's cross-tenant sweep tasks per §5), and a `get_db()` rework that decodes the
+request's JWT and issues `SET app.tenant_id` on the runtime connection before the request
+handler runs.
+
+**9.3 The app-layer filter is the primary, portable mechanism — RLS is Postgres-only backstop
+on top of it, not a shortcut around it.** This repo's entire test suite (613 tests as of
+2026-07-13) runs against in-memory SQLite, which has no RLS support at all. A GUC-driven
+`server_default` (`current_setting('app.tenant_id')`) on the `tenant_id` column would work on
+Postgres but silently fail on SQLite, making the isolation logic itself untestable in the
+existing test harness. The correct, testable design threads `tenant_id` as an explicit parameter
+through every service's create/list/get methods (set from the resolved tenant on the Python
+side, not a DB-side default) — this is real, per-service-file work, not the "RLS makes the
+app-layer filter optional" shortcut that seemed available before this was worked through.
+
+**9.4 Celery tasks currently carry zero tenant context.** Every existing Celery task (pipeline
+runs, schema drift checks, autopilot evaluation, audit buffer flush) is invoked with plain
+business-object IDs (`run_pipeline_task.delay(pipeline_id, run_id)`) — none thread a tenant_id
+through. §5's "bypass path for 3 named sweep tasks" undersold this: making even the
+*non-sweep* tasks (e.g. `run_pipeline_task`) tenant-aware requires changing every task's
+signature *and* every call site that enqueues it (routers), not just adding a bypass to the 3
+tasks that are supposed to run cross-tenant.
+
+**9.5 Net effect on scope.** Full, correctly-enforced, tested tenant isolation across all 39
+tables — with Celery tasks made tenant-aware and a Postgres-backed cross-tenant leak test suite
+(the existing SQLite test harness can't exercise RLS at all) — is a multi-day, multi-session
+build, not a same-day epic like Pipelines/Schema Intel/Visualize/Security Admin were. Per user
+decision on 2026-07-13, this epic is being left at ADR-accepted-but-unscheduled rather than
+starting a partial build; **§10 below proposes a phased execution order** for whoever picks this
+up next, so the scope is visible before committing to a start date.
+
+## 10. Proposed phased execution order (not started; for a dedicated future session)
+
+Rather than one big-bang session, split delivery into independently-shippable phases so partial
+progress is never "half-isolated" in a way that's worse than not-isolated (the mixed-isolation
+risk §6.4 already flagged, now scoped to phases instead of tables):
+
+1. **Phase 1 — Core 5**: `users`, `connections`, `mappings`, `pipelines`, `audit_log` (the tables
+   every prior cross-reference doc named as the concrete leak risk) + their child tables. Tenant
+   model, JWT claim, `dataplane_app` role + RLS, service-layer filter threading, a real
+   Postgres-backed cross-tenant leak test for just these 5. Ships as a complete, independently
+   correct slice — not "5 of 39 done," but "the highest-risk tables are now actually isolated."
+2. **Phase 2 — Remaining root tables**: `chat_messages`, `query_history`, `autopilot_*` (3
+   tables), `saved_queries`, `viz_views`, `roles`, `user_roles`, `masking_policies`,
+   `row_access_policies`, `semantic_entities`. Same pattern as Phase 1, mechanically repeated.
+3. **Phase 3 — Celery tenant-awareness**: thread `tenant_id` through every task signature and
+   enqueue call site; retire the "Celery runs unscoped" carve-out from Phase 1/2 down to only the
+   3 legitimately-cross-tenant sweep tasks §5 originally intended.
+4. **Phase 4 — Admin surface + cross-reference cleanup**: Task #12's tenant management page,
+   Task #11's status updates across the 6 prior cross-reference files.
+
+Each phase should land with its own tests and its own live-Docker leak-check before starting the
+next — don't let "isolation" be claimed for a table before its filter+RLS+test are all in place.

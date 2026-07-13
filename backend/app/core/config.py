@@ -47,6 +47,8 @@ class Settings(BaseSettings):
     SCHEMA_INTEL_MAX_DISTINCT_SCAN_ROWS: int = 100000
     SCHEMA_INTEL_USE_SEPARATE_CREDENTIALS: bool = False
 
+    RBAC_PERMISSION_CACHE_TTL_SECONDS: int = 30
+
     class Config:
         env_file = ".env"
 

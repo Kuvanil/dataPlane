@@ -1,10 +1,15 @@
 # Tenant Isolation — Task Index (app-wide)
 
-> **Active epic** — ADR signed off 2026-07-13, see [00_architecture_decision.md §8](00_architecture_decision.md)
-> for the 5 answered open questions. Option A (row-level `tenant_id` + Postgres RLS), one tenant
-> per user, no cross-tenant ops bypass, big-bang rollout, disposable legacy data. Tasks below are
-> ready to execute in order. Same treatment as AI Autopilot — spec reviewed, now built
-> task-by-task with tests.
+> **Re-scoped, not started** — ADR signed off 2026-07-13 (Option A: row-level `tenant_id` +
+> Postgres RLS, one tenant per user, no cross-tenant ops bypass, big-bang rollout, disposable
+> legacy data — see [00_architecture_decision.md §8](00_architecture_decision.md)). A same-day
+> build attempt was aborted after design work showed the task list below undersizes the real
+> scope by roughly 3-4x — see [00_architecture_decision.md §9](00_architecture_decision.md) for
+> why (39 tables now, not 24; RLS needs a non-superuser DB role; the app-layer filter, not RLS,
+> is the only mechanism testable against this repo's SQLite test suite; Celery tasks have zero
+> tenant-context plumbing today). **Use [§10's phased plan](00_architecture_decision.md) instead
+> of the task table below when picking this up** — the table is kept for reference but reflects
+> the original, now-superseded scope estimate.
 
 ## Status legend
 - `[ ]` not started · `[~]` in progress · `[x]` done · `[!]` blocked · `[?]` needs product input
@@ -60,3 +65,13 @@
   (built ahead of this ADR, calling endpoints that don't exist yet) with the now-final data model.
   No implementation started yet in this session — Tasks #01-#12 remain `[ ]`; this session's
   build focus is Pipelines → Schema Intel → Visualize per separate agreement with the user.
+- 2026-07-13 (later same day) — After Security Admin was built, a build attempt on this epic was
+  started and aborted at the design stage (no code written) once it became clear the task list
+  above undersizes the real scope substantially: the table inventory is stale (39 tables now vs.
+  the 24 this list assumes), genuine RLS enforcement needs a new non-superuser Postgres role
+  (superusers unconditionally bypass RLS), the app-layer filter — not RLS — is the only
+  mechanism this repo's SQLite-based test suite can actually exercise, and Celery tasks have no
+  tenant-context plumbing at all today (not just the 3 sweep tasks this list's Task #07
+  anticipated). Full findings + a phased re-plan are in
+  `00_architecture_decision.md` §9–§10. Re-scoped as a dedicated multi-session epic per user
+  decision, rather than starting a partial build in this session.

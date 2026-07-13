@@ -12,7 +12,7 @@
 | 01 | Visualize | `/dashboard/visualize` | **Critical** | ✅ Fixed (2026-07-13) — real charting workspace built; topology graph moved to `/dashboard/visualize/topology` |
 | 02 | Visualize | `/dashboard/visualize` | **High** | ✅ Fixed (2026-07-13) — chart types, field config, aggregations, save/load views, CSV/PNG export all landed |
 | 03 | Schema Intel | `/dashboard/schema` | **High** | ✅ Fixed (2026-07-13) — Schema Matcher replaced with a real catalog: search/filter, profiling, classification+confidence, manual override, drift history |
-| 04 | Security | `/dashboard/security` | **High** | Only displays PII classifications — no role CRUD, permission matrix, masking policies, or row filters. Spec'd as its own epic (`security_tasks/INDEX.md`), not built — 100% greenfield backend, roughly as much work as the other three combined |
+| 04 | Security | `/dashboard/security` | **High** | ✅ Fixed (2026-07-13) — full RBAC + masking/row-filter admin page built (`security_tasks/INDEX.md`) |
 | 05 | Pipelines | `/dashboard/pipelines` | **High** | ✅ Fixed (2026-07-13) — create form (from published mapping), cron scheduler, run history, re-run, retry policy, concurrency guard all landed and verified with real data movement |
 | 06 | Connectors | `/dashboard/connectors` | **High** | ✅ Fixed — Edit, soft-delete with dependency warnings, credential rotation, and audit log added |
 | 07 | AskData Bot | `/dashboard/askdata` | **Medium** | Missing Visualize handoff, no conversation persistence across reloads, no PII guardrail indicators |
@@ -21,7 +21,7 @@
 | 10 | Query Studio | `/dashboard/query-studio` | **Medium** | No schema-aware autocomplete, write/DDL confirmation, send-to-Visualize, or CSV export |
 | 11 | Dashboard | `/dashboard` | **Medium** | Missing connector health widget, autopilot activity widget, security alert tile, drill-through |
 | 12 | Schema Mapper | `/dashboard/schema-mapper` | **Medium** | AI suggestion accept/reject UI absent, no type-compatibility validation display, no publish flow |
-| 13 | Tenant Isolation | *(missing)* | **High** | ADR resolved 2026-07-13 (`tenant_isolation_tasks/00_architecture_decision.md` §8) — epic unblocked but not built; still no `tenants` table, no backend, no frontend page. 12-task execution plan ready in `tenant_isolation_tasks/INDEX.md` |
+| 13 | Tenant Isolation | *(missing)* | **High** | ADR resolved 2026-07-13; a build attempt the same day was aborted at design stage — real scope is ~3-4x the original 12-task estimate (39 tables not 24, new DB role needed for RLS, Celery rework). Re-scoped as a phased, multi-session epic — see `tenant_isolation_tasks/00_architecture_decision.md` §9–§10 |
 | 14 | Pages Inline Architecture | Multiple | **Low** | Connectors, pipelines, schema, security, visualize all have logic inline — no component separation — violates maintainability best practices |
 
 ---
@@ -102,31 +102,18 @@ None of these exist. The current page is a third copy of schema-matching functio
 
 ---
 
-### Bug 04 — [High] Security page is read-only classification viewer only
+### Bug 04 — [High] Security page is read-only classification viewer only — ✅ Fixed (2026-07-13)
 
 **Page:** `/dashboard/security`
 **TRD:** `TRD_DataPlane_Security.md` FR1–FR9
 
-**Description:**
-The Security page displays a hardcoded PII classification table from `GET /api/v1/schema/1/classify`. It has no security administration functionality whatsoever.
-
-Missing per TRD:
-- Role CRUD: create, edit, deactivate roles (FR1)
-- User role assignment/revocation (FR2)
-- Role-to-permission mapping matrix (FR3)
-- Column-level access and PII masking policy editor (FR4)
-- Row-level access filter editor (FR5)
-- Effective-permission preview for a user (implied by checklist)
-- Privileged-change gating UI (FR8)
-- Audit event display for security changes (FR9)
-
-**Impact:** Administrators cannot manage roles, permissions, or data protection policies through the UI.
-
-**Evidence:**
-- Page at `frontend/src/app/dashboard/security/page.tsx` only fetches `/api/v1/schema/1/classify`
-- Has "Run Audit Scan" button that does nothing
-- No role management UI at all
-- Hardcoded to connection ID 1
+**Resolution:** Full RBAC + data-protection-policy engine built (`Role`/`Permission`/
+`RolePermission`/`UserRole`/`MaskingPolicy`/`RowAccessPolicy` models, `AuthzService` policy
+engine, masking/row-filter enforcement wired into Visualize), and the page rebuilt as a 6-tab
+admin workspace (Roles / Permissions / Users / Masking / Row Filters / Audit). See
+`security_tasks/INDEX.md` for the full breakdown. All 9 FRs done; 60 new backend tests; verified
+live with real masking enforcement (viewer role got `***`, exempt admin got the real value, same
+query against real seeded data).
 
 ---
 
@@ -547,10 +534,10 @@ These are features that would significantly improve the product experience but a
 ### Immediate (Critical/High — Blocks epic delivery)
 1. ✅ Build proper Visualize page with chart types, aggregations, filters, save/load, export (2026-07-13)
 2. ✅ Build proper Schema Intel catalog page with search, profiling, classifications, drift (2026-07-13)
-3. Build Security admin page with role CRUD, permission matrix, masking policies — spec'd (`security_tasks/INDEX.md`), not built; 100% greenfield backend
+3. ✅ Build Security admin page with role CRUD, permission matrix, masking policies (2026-07-13)
 4. ✅ Build Pipeline management page with create form, scheduler, run history, re-run (2026-07-13)
 5. ✅ Add edit/delete/rotate to Connectors page with dependency warnings (done previously)
-6. Create Tenant Isolation management page — ADR resolved 2026-07-13, epic unblocked but the 12-task backend build (tenants table, JWT claim, RLS, service-layer sweep, etc.) not started
+6. Create Tenant Isolation management page — ADR resolved 2026-07-13; the backend build (tenants table, JWT claim, RLS, service-layer sweep, etc.) was re-scoped to a phased multi-session plan after a same-day build attempt found the real scope ~3-4x larger than estimated — see `tenant_isolation_tasks/00_architecture_decision.md` §9–§10
 
 ### Short-term (Medium — Completes epic requirements)
 7. Add retention policy display, tamper-evidence verification UI, role-gating indicators to Audit Trail
