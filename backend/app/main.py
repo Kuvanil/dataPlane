@@ -204,6 +204,10 @@ async def lifespan(app: FastAPI):
         conn.commit()
         conn.close()
 
+    # ── E2E test dataset: retail analytics (docs/E2E_TESTING_GUIDE.md) ──
+    from app.core.e2e_seed_data import seed_e2e_retail_analytics
+    e2e_retail_path = seed_e2e_retail_analytics("/shared/data")
+
     # 3. Seed DBConnection rows
     from sqlalchemy.orm import Session
     db = Session(bind=engine)
@@ -237,6 +241,11 @@ async def lifespan(app: FastAPI):
                     "user": "postgres",
                     "password": "postgres"
                 }
+            ))
+            db.add(DBConnection(
+                name="E2E_Retail_Analytics",
+                type="sqlite",
+                config={"path": e2e_retail_path},
             ))
             db.commit()
     finally:
