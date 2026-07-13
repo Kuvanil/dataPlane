@@ -382,15 +382,30 @@ matches for unmapped tables, and risk/PII annotations per column.
 7. Confirm the bottom KPI tiles (`Source Tables` / `Target Tables` / `Matched` /
    `Issues`) match what's visually shown — `Matched` should count real mappings too,
    not just exact-name matches.
+8. **Second live example**, using the E2E dataset: Source = `E2E_Retail_Analytics`
+   (connection 6), Target = `ECommerce_MySQL` (connection 3) — a real published
+   mapping ("E2E Retail to ECommerce", mapping id 3) covers
+   `analytics_customers→customers`, `analytics_products→products`, and
+   `analytics_orders→orders` (4 fields each). Confirm those 3 show "Mapped (4
+   fields)" and only `analytics_support_tickets`/`analytics_returns` are flagged as
+   issues (correctly — ECommerce_MySQL has no counterpart for either).
 
 ### API
 ```bash
 curl -s "http://localhost:8000/api/v1/schema/graph?source_id=1&target_id=2" -H "Authorization: Bearer $TOK" | python3 -m json.tool
+
+# Second example (E2E_Retail_Analytics -> ECommerce_MySQL):
+curl -s "http://localhost:8000/api/v1/schema/graph?source_id=6&target_id=3" -H "Authorization: Bearer $TOK" | python3 -m json.tool
 ```
 
 **Known scope limit:** this endpoint has no auth dependency at all today (pre-existing
 gap, not introduced by the topology-accuracy fix) — anyone with network access to the
 API can call it unauthenticated.
+
+**Testing tip:** if you change Source and Target in quick succession, the graph can
+briefly render an intermediate combination (e.g. new source + old target) while the
+final fetch is still in flight — wait ~1-2s or click "Refresh" before concluding
+something's wrong. This is normal async fetch behavior, not a data bug.
 
 ---
 
