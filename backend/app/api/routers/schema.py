@@ -1,7 +1,10 @@
+from typing import Any, Dict
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.models.connection import DBConnection
+from app.models.mapping import FieldMapping, Mapping
 from app.services.schema_service import SchemaService
 from app.services.diff_service import DiffService
 from app.services.security_service import SecurityService
@@ -17,6 +20,54 @@ def _get_connection_or_404(id: int, db: Session) -> DBConnection:
     if not conn:
         raise HTTPException(status_code=404, detail="Connection not found")
     return conn
+
+
+def _get_real_table_mappings(
+    db: Session, source_conn_id: int, target_conn_id: int,
+) -> Dict[str, Dict[str, Any]]:
+    """Look up the published Schema Mapper mapping (if any) between these two
+    connections and group its field-level edges into table-level
+    correspondences (source_table -> {target_table, field_count}).
+
+    The Schema Topology graph previously matched tables by exact name only,
+    which is wrong whenever a real ETL mapping renames a table (e.g.
+    crm_users -> dw_customers) — every renamed source table was flagged
+    "not found in target schema" despite a real, working, published mapping
+    existing between them. This mirrors pipeline_executor.py's own
+    "current published version's field mappings" resolution so the topology
+    graph and the actual pipeline execution agree on what's mapped.
+    """
+    mapping = (
+        db.query(Mapping)
+        .filter(
+            Mapping.source_id == source_conn_id,
+            Mapping.target_id == target_conn_id,
+            Mapping.status == "published",
+            Mapping.deleted_at.is_(None),
+        )
+        .order_by(Mapping.updated_at.desc())
+        .first()
+    )
+    if mapping is None or mapping.current_version_id is None:
+        return {}
+
+    edges = (
+        db.query(FieldMapping)
+        .filter(FieldMapping.version_id == mapping.current_version_id)
+        .all()
+    )
+
+    table_pairs: Dict[str, Dict[str, Any]] = {}
+    for edge in edges:
+        sources = edge.sources or []
+        if not sources or not sources[0].get("table"):
+            continue
+        source_table = sources[0]["table"]
+        entry = table_pairs.setdefault(
+            source_table, {"target_table": edge.target_table, "field_count": 0},
+        )
+        entry["field_count"] += 1
+    return table_pairs
 
 @router.get("/diff")
 def compare_schemas(source_id: int, target_id: int, db: Session = Depends(get_db)):
@@ -159,24 +210,47 @@ def get_graph_data(source_id: int, target_id: int, db: Session = Depends(get_db)
         source_schema = SchemaService.get_full_schema(source_conn)
         target_schema = SchemaService.get_full_schema(target_conn)
 
-        # Diff
+        # Diff (exact table-name matching)
         diff_result = DiffService.compare_schemas(source_schema, target_schema)
+
+        # Real published Schema Mapper mapping between these connections, if
+        # any — overrides false "not found" positives for legitimately
+        # renamed tables (see _get_real_table_mappings docstring).
+        real_mappings = _get_real_table_mappings(db, source_id, target_id)
 
         # Classifications for source
         source_classifications = SecurityService.classify_schema(source_schema)
 
-        # AI matches for first table pair
+        # AI matches: only attempted for a table pair that's genuinely
+        # unmapped after considering both exact-name matches AND real
+        # published mappings — previously this ran unconditionally against
+        # the first source/first target table regardless of whether they
+        # were already matched, and always drew its edge between those two
+        # nodes regardless of which tables the AI actually compared.
         ai_matches = []
-        src_tables = list(source_schema.keys())
-        tgt_tables = list(target_schema.keys())
-        if src_tables and tgt_tables:
+        ai_match_pair = None
+        matched_source_tables = set(diff_result.get("matched_tables", [])) | set(real_mappings.keys())
+        matched_target_names = set(diff_result.get("matched_tables", [])) | {
+            info["target_table"] for info in real_mappings.values()
+        }
+        unmapped_source = [t for t in source_schema if t not in matched_source_tables]
+        unmapped_target = [t for t in target_schema if t not in matched_target_names]
+        if unmapped_source and unmapped_target:
+            ai_match_pair = (unmapped_source[0], unmapped_target[0])
             match_result = AIService.match_schemas(
-                source_name=src_tables[0],
-                source_schema=source_schema[src_tables[0]],
-                target_name=tgt_tables[0],
-                target_schema=target_schema[tgt_tables[0]],
+                source_name=ai_match_pair[0],
+                source_schema=source_schema[ai_match_pair[0]],
+                target_name=ai_match_pair[1],
+                target_schema=target_schema[ai_match_pair[1]],
             )
-            ai_matches = match_result.get("matches", [])
+            # Drop no-match / low-confidence noise (a live LLM can return a
+            # speculative guess with target=null and single-digit confidence
+            # for a column that just has no real counterpart) — those aren't
+            # actionable edges, just clutter on the graph.
+            ai_matches = [
+                m for m in match_result.get("matches", [])
+                if m.get("target") and m.get("confidence", 0) >= 30
+            ]
 
         graph = DiffService.generate_graph_data(
             source_schema=source_schema,
@@ -186,6 +260,8 @@ def get_graph_data(source_id: int, target_id: int, db: Session = Depends(get_db)
             ai_matches=ai_matches,
             source_name=source_conn.name,
             target_name=target_conn.name,
+            real_mappings=real_mappings,
+            ai_match_pair=ai_match_pair,
         )
         return graph
     except Exception as e:

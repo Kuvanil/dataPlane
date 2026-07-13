@@ -1,4 +1,4 @@
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Tuple
 
 class DiffService:
     @staticmethod
@@ -71,11 +71,29 @@ class DiffService:
         ai_matches: List[Dict[str, Any]] = None,
         source_name: str = "Source",
         target_name: str = "Target",
+        real_mappings: Dict[str, Dict[str, Any]] = None,
+        ai_match_pair: Optional[Tuple[str, str]] = None,
     ) -> Dict[str, Any]:
         """
         Convert schema + diff + classification data into a graph-compatible format
         for Neo4j/NetworkX-style visualization on the frontend.
+
+        ``real_mappings`` (source_table -> {"target_table", "field_count"}) comes
+        from an actual published Schema Mapper mapping between the two
+        connections, if one exists. Exact-name matching (``diff_result``) can't
+        see a legitimate rename (e.g. crm_users -> dw_customers via a real ETL
+        mapping) and would otherwise flag every renamed table as "not found" —
+        real_mappings overrides that false positive and draws the real mapped
+        edge instead of relying on name equality.
+
+        ``ai_match_pair`` is the ``(source_table, target_table)`` the caller
+        actually ran ``AIService.match_schemas`` against — without it, the
+        AI-match edge can't be drawn between the correct two nodes.
         """
+        real_mappings = real_mappings or {}
+        real_mapped_source_tables = set(real_mappings.keys())
+        real_mapped_target_tables = {info["target_table"] for info in real_mappings.values()}
+
         nodes = []
         edges = []
         annotations = []
@@ -94,7 +112,10 @@ class DiffService:
         for i, (table, cols) in enumerate(source_schema.items()):
             # Table group node
             table_node_id = f"src_{table}"
-            has_issues = table in diff_result.get("missing_tables_in_target", [])
+            has_issues = (
+                table in diff_result.get("missing_tables_in_target", [])
+                and table not in real_mapped_source_tables
+            )
             risk_level = "low"
 
             col_risks = []
@@ -151,7 +172,10 @@ class DiffService:
         x_target = 600
         for i, (table, cols) in enumerate(target_schema.items()):
             table_node_id = f"tgt_{table}"
-            has_issues = table in diff_result.get("missing_tables_in_source", [])
+            has_issues = (
+                table in diff_result.get("missing_tables_in_source", [])
+                and table not in real_mapped_target_tables
+            )
 
             nodes.append({
                 "id": table_node_id,
@@ -203,31 +227,55 @@ class DiffService:
                     "severity": "medium",
                 })
 
+        # ── Real published-mapping edges ───────────────────────
+        # These reflect an actual ETL mapping (Schema Mapper), so they can
+        # legitimately connect tables with different names — the label
+        # states field count rather than a name/type "% match" score, since
+        # a published mapping's transformations can rename/retype columns
+        # on purpose.
+        for source_table, info in real_mappings.items():
+            field_count = info["field_count"]
+            edges.append({
+                "source": f"src_{source_table}",
+                "target": f"tgt_{info['target_table']}",
+                "type": "published_mapping",
+                "label": f"Mapped ({field_count} field{'s' if field_count != 1 else ''})",
+                "animated": True,
+                "style": {"stroke": "#22c55e"},
+            })
+
         # ── AI-matched edges ──────────────────────────────────
-        if ai_matches:
+        # ai_match_pair names the exact two nodes the caller ran
+        # AIService.match_schemas against — previously this always drew an
+        # edge between the first source and first target node regardless of
+        # which pair was actually matched, which mislabeled unrelated tables.
+        if ai_matches and ai_match_pair:
+            src_id, tgt_id = f"src_{ai_match_pair[0]}", f"tgt_{ai_match_pair[1]}"
             for match in ai_matches:
-                src_tables = [n["id"] for n in nodes if n["group"] == "source"]
-                tgt_tables = [n["id"] for n in nodes if n["group"] == "target"]
-                if src_tables and tgt_tables:
-                    edges.append({
-                        "source": src_tables[0],
-                        "target": tgt_tables[0],
-                        "type": "ai_match",
-                        "label": f"AI: {match.get('source', '?')} → {match.get('target', '?')} ({match.get('confidence', 0)}%)",
-                        "animated": True,
-                        "style": {
-                            "stroke": "#8b5cf6",
-                            "strokeDasharray": "5,5",
-                        },
-                    })
+                edges.append({
+                    "source": src_id,
+                    "target": tgt_id,
+                    "type": "ai_match",
+                    "label": f"AI: {match.get('source', '?')} → {match.get('target', '?')} ({match.get('confidence', 0)}%)",
+                    "animated": True,
+                    "style": {
+                        "stroke": "#8b5cf6",
+                        "strokeDasharray": "5,5",
+                    },
+                })
 
         # ── Summary stats ─────────────────────────────────────
+        # Counted from the actual per-node has_issues flags (which factor in
+        # real_mappings) rather than the raw name-only diff_result, so the
+        # summary tile numbers always match what the graph visibly shows.
+        source_issue_count = sum(1 for n in nodes if n["group"] == "source" and n["has_issues"])
+        target_issue_count = sum(1 for n in nodes if n["group"] == "target" and n["has_issues"])
         summary = {
             "total_source_tables": len(source_schema),
             "total_target_tables": len(target_schema),
-            "matched_tables": len(diff_result.get("matched_tables", [])),
-            "missing_in_target": len(diff_result.get("missing_tables_in_target", [])),
-            "missing_in_source": len(diff_result.get("missing_tables_in_source", [])),
+            "matched_tables": len(diff_result.get("matched_tables", [])) + len(real_mappings),
+            "missing_in_target": source_issue_count,
+            "missing_in_source": target_issue_count,
             "total_annotations": len(annotations),
             "high_risk_count": sum(1 for a in annotations if a.get("severity") == "high"),
             "medium_risk_count": sum(1 for a in annotations if a.get("severity") == "medium"),

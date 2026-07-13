@@ -1,0 +1,683 @@
+# dataPlane — End-to-End Testing Guide
+
+A practical, hands-on guide to exercising every capability of the dataPlane platform —
+UI walkthroughs, equivalent `curl` commands, expected results, and edge cases worth
+checking. Use this to smoke-test a fresh deploy, verify a change didn't regress
+another module, or onboard someone new to what the app actually does.
+
+> **Scope note:** this guide documents what's built and working today (2026-07-13).
+> A few features have documented, intentional scope limits (e.g. masking/row-filter
+> enforcement only applies to Visualize queries, not Query Studio's arbitrary SQL) —
+> those are called out inline rather than treated as bugs. See
+> `requirements-specs/*/INDEX.md` for the authoritative build history of each epic.
+
+---
+
+## 1. Architecture at a glance
+
+| Layer | Tech | Notes |
+|---|---|---|
+| Backend API | FastAPI (Python) | `backend/app/main.py`, routers under `app/api/routers/` |
+| Async workers | Celery + Redis | pipeline runs, schema drift sweeps, autopilot evaluation, AI matching |
+| Database | PostgreSQL 15 | no migration tool — schema changes via `Base.metadata.create_all` on boot |
+| Frontend | Next.js (App Router) | `frontend/src/app/dashboard/<feature>/` |
+| Demo data sources | 5 seeded SQLite/simulated connections | see §3 |
+
+All services run via Docker Compose (`docker-compose.yml`): `postgres`, `broker` (Redis),
+`api`, `worker`, `beat`, `frontend` (nginx).
+
+---
+
+## 2. Environment setup
+
+```bash
+cd /path/to/dataplane-main
+docker compose up -d
+```
+
+Wait for all six containers to report healthy:
+
+```bash
+docker ps --filter "name=dataplane" --format "{{.Names}}\t{{.Status}}"
+```
+
+**Known transient issue:** on cold start, gunicorn boots 2 worker processes that both
+run `Base.metadata.create_all()` concurrently, which occasionally races on a catalog
+object (`duplicate key value violates unique constraint`). Gunicorn auto-restarts the
+failed worker and it self-heals within ~15-20s. If `docker compose up` aborts because
+`api` was transiently unhealthy when a dependent container's health check polled,
+re-run `docker compose up -d <service>` for whatever didn't start — no data is lost.
+
+**Health checks:**
+
+```bash
+curl -sf http://localhost:8000/health   # {"status":"healthy",...,"checks":{"database":"ok","redis":"ok"}}
+curl -sfI http://localhost:3000         # HTTP/1.1 200 OK (nginx serving the frontend)
+```
+
+**Frontend:** http://localhost:3000 (redirects to `/login` if unauthenticated)
+**Backend API docs:** http://localhost:8000/docs (FastAPI's auto-generated Swagger UI —
+useful for exploring every endpoint's exact request/response schema interactively)
+
+---
+
+## 3. Seeded demo data reference
+
+On first boot (empty DB), the API seeds:
+
+**Connections** (`GET /api/v1/connectors/`):
+
+| ID | Name | Type | Tables |
+|---|---|---|---|
+| 1 | `CRM_Source_Analytics` | sqlite | `crm_users` (id, first_name, last_name, email_address, phone_number, created_at), `crm_leads` (id, email, company, status, score, source), `crm_activities` (id, user_id, action, timestamp, ip_address) |
+| 2 | `Data_Warehouse_Target` | sqlite | `dw_customers` (customer_id, given_name, family_name, contact_email, contact_phone, signup_date), `dw_opportunities` (opp_id, customer_email, organization, stage, probability), `dw_events` (event_id, customer_id, event_type, event_date) |
+| 3 | `ECommerce_MySQL` | sqlite (simulating MySQL) | `products`, `orders`, `customers` |
+| 4 | `Finance_Oracle` | oracle (simulated) | `GL_ACCOUNTS`, `GL_TRANSACTIONS`, `GL_LEDGER` |
+| 5 | `HR_Postgres` | postgres | points at the app's own Postgres — mostly a connector-type example, not pre-loaded with demo tables |
+
+`CRM_Source_Analytics` → `Data_Warehouse_Target` is the canonical source→target pair used
+throughout Schema Mapper / Pipelines / Schema Topology examples below (crm_users is a
+realistic PII-bearing table: email, phone, names).
+
+**Default admin user:**
+
+```
+email:    admin@dataplane.ai
+password: admin123          (ADMIN_DEFAULT_PASSWORD env var)
+role:     admin
+```
+
+**Seeded roles** (Security Admin, seeded on every boot): `admin` (all 70 permissions),
+`analyst` (42 permissions — everything except delete/admin, view-only on
+audit/security), `viewer` (10 permissions — view-only on all 10 modules).
+
+---
+
+## 4. Authentication & roles
+
+### UI walkthrough
+1. Go to http://localhost:3000 → redirects to `/login`.
+2. Log in with `admin@dataplane.ai` / `admin123`.
+3. Confirm the sidebar shows "Admin Session" and every module link is visible.
+4. Log out (bottom-left) → redirected back to `/login`, and any subsequent API call
+   without a token 401s.
+
+### API
+```bash
+TOK=$(curl -s -X POST http://localhost:8000/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@dataplane.ai","password":"admin123"}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+curl -s http://localhost:8000/api/v1/auth/me -H "Authorization: Bearer $TOK"
+# {"id":1,"email":"admin@dataplane.ai","role":"admin"}
+```
+
+### Role matrix to verify
+Three canonical roles gate almost every mutating endpoint via `require_role(...)`:
+`admin` (full access) > `analyst` (read/write/run, no delete) > `viewer` (read-only).
+To test as a non-admin role, create a test user directly (no self-signup endpoint
+exists by design — user provisioning is an IdP integration point, out of scope):
+
+```bash
+docker exec dataplane-api python3 -c "
+from app.core.database import SessionLocal
+from app.models.user import User
+from app.services.auth_service import AuthService
+db = SessionLocal()
+db.add(User(email='viewer_test@dataplane.ai',
+            hashed_password=AuthService.hash_password('viewer123'),
+            role='viewer', is_active=True))
+db.commit()
+"
+# then log in as viewer_test@dataplane.ai / viewer123 and confirm:
+# - GET endpoints succeed
+# - POST/PUT/DELETE endpoints return 403
+# Clean up afterward: delete the row via the same docker exec pattern.
+```
+
+---
+
+## 5. Dashboard
+
+**Purpose:** unified KPI tiles + activity feed, role-scoped (restricted tiles come back
+`unavailable` rather than 403ing the whole page).
+
+### UI walkthrough
+1. Land on `/dashboard` after login.
+2. Confirm tiles render: connector health, recent pipeline activity, recent audit
+   activity, etc. Switch the time-range selector (24h / 7d / 30d) and confirm the
+   feed updates.
+3. Click through the quick-action links ("Visualize Schema", "Open Visualizer") and
+   confirm they route to real pages, not dead links.
+
+### API
+```bash
+curl -s "http://localhost:8000/api/v1/dashboard/summary?range=7d" -H "Authorization: Bearer $TOK" | python3 -m json.tool
+```
+
+---
+
+## 6. Connectors
+
+**Purpose:** manage database connections — create, test, discover schema, edit,
+rotate credentials, soft-delete with dependency warnings.
+
+### UI walkthrough
+1. `/dashboard/connectors` — confirm all 5 seeded connections render with health
+   indicators.
+2. **Create:** click "+ New Connector", pick a type (sqlite/postgres/mysql/oracle),
+   fill config, save. Confirm it appears in the list.
+3. **Test Connection:** click "Test Conn" on any connector — confirm a pass/fail
+   diagnostic appears (not a silent no-op).
+4. **Scan Schema:** click "Scan Schema" — confirm table/column structure renders.
+5. **Edit:** open the edit modal on a connector, change the name, save — confirm
+   secret fields never show existing values (only "•••••••• Change").
+6. **Rotate Credentials:** open the rotation modal, enter new credentials, "Test new
+   credentials" before saving.
+7. **Delete:** click Delete on a connector that has a mapping/pipeline dependency —
+   confirm it shows a warning listing the dependents before requiring a second
+   "Delete Anyway" confirmation. Delete one with no dependents — confirm a simple
+   confirmation, then it disappears from the list (soft-delete).
+8. **View Activity:** confirm the per-connector audit log slide-out shows real events
+   (created, tested, scanned, edited, deleted).
+9. Confirm health status auto-polls (wait 30s, watch the health dot without refreshing).
+
+### API
+```bash
+curl -s http://localhost:8000/api/v1/connectors/ -H "Authorization: Bearer $TOK" | python3 -m json.tool
+curl -s -X POST http://localhost:8000/api/v1/connectors/1/test -H "Authorization: Bearer $TOK"
+curl -s http://localhost:8000/api/v1/connectors/1/schema -H "Authorization: Bearer $TOK"
+curl -s -X DELETE "http://localhost:8000/api/v1/connectors/1?confirm=false" -H "Authorization: Bearer $TOK"
+# → {"warning": "...", "dependents": {...}, "requires_confirm": true} if dependents exist
+```
+
+---
+
+## 7. Schema Intel (Catalog)
+
+**Purpose:** scan connections into a persisted catalog, profile columns (null rate,
+distinct count, sample-based stats), classify columns as PII/Sensitive/Public (by
+name AND by content pattern), search/filter the catalog, override a classification.
+
+### UI walkthrough
+1. `/dashboard/schema` — pick a connection (e.g. `CRM_Source_Analytics`), confirm the
+   catalog view loads (empty if never scanned).
+2. Click "Scan" — confirm real table/column data populates (3 tables, 17 columns for
+   CRM_Source_Analytics).
+3. Click "Profile" — confirm profiling runs async (Celery task) and populates null
+   rate / distinct count / min/max per column after a few seconds.
+4. Confirm `crm_users.email_address` classifies as **PII** (content-pattern match on
+   real email-shaped values, not just name matching) and `crm_activities.ip_address`
+   classifies as **Sensitive** (name-keyword match).
+5. Use the search bar to filter by column name, data type, or classification label.
+6. Override a classification manually (e.g. force `crm_activities.id` to PII) — confirm
+   it persists, shows `method: manual_override`, and survives a re-scan (manual
+   overrides aren't clobbered by re-classification).
+7. Check drift history — re-scan after a schema change (or just re-scan unchanged)
+   and confirm the drift panel shows the snapshot history.
+
+### API
+```bash
+curl -s -X POST http://localhost:8000/api/v1/catalog/scan/1 -H "Authorization: Bearer $TOK" | python3 -m json.tool
+curl -s "http://localhost:8000/api/v1/catalog/1/tables" -H "Authorization: Bearer $TOK" | python3 -m json.tool
+curl -s -X POST http://localhost:8000/api/v1/catalog/1/profile -H "Authorization: Bearer $TOK"
+curl -s -X PUT http://localhost:8000/api/v1/catalog/columns/1/classification \
+  -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"label":"PII","level":"High"}'
+```
+
+---
+
+## 8. Schema Mapper
+
+**Purpose:** visual drag-and-drop ETL mapping workspace — draft/publish lifecycle,
+AI-suggested field matches, transformation editing, English-language mapping
+requests, validation, versioned export.
+
+### UI walkthrough
+1. `/dashboard/schema-mapper` — create a new mapping: source = `CRM_Source_Analytics`,
+   target = `Data_Warehouse_Target`.
+2. On the canvas, drag a connection from `crm_users.id` to `dw_customers.customer_id`
+   — confirm an edge appears and the `EdgeInspector` panel shows it.
+3. Click "Suggest" (AI suggestions) — confirm candidate field matches appear in the
+   `SuggestionPanel` with confidence scores; accept one, reject another.
+4. Open the `TransformEditor` on an edge and change its transformation (e.g. add a
+   direct copy vs. a computed expression) — confirm it saves.
+5. Try adding a second edge targeting the same target column that's already mapped —
+   confirm it's rejected (one target column can only be mapped once per draft).
+6. Click "Validate" — confirm the `ValidationPanel` shows any structural issues
+   (type mismatches, unmapped required columns).
+7. Click "Publish" — confirm the `PublishDialog` requires explicit confirmation, then
+   the mapping becomes read-only/versioned (status: published).
+8. Use "Export" to download the mapping definition (JSON/YAML).
+9. From `MappingList`, confirm draft vs. published mappings are visually distinguished.
+
+### API
+```bash
+curl -s -X POST http://localhost:8000/api/v1/mappings/ -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"name":"CRM to DW","source_id":1,"target_id":2}'
+
+curl -s -X POST http://localhost:8000/api/v1/mappings/1/edges -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"target":{"table":"dw_customers","column":"customer_id"},"sources":[{"table":"crm_users","column":"id"}],"transformation":{"kind":"direct"}}'
+
+curl -s -X POST http://localhost:8000/api/v1/mappings/1/validate -H "Authorization: Bearer $TOK"
+curl -s -X POST http://localhost:8000/api/v1/mappings/1/publish -H "Authorization: Bearer $TOK"
+curl -s http://localhost:8000/api/v1/mappings/1/export -H "Authorization: Bearer $TOK"
+```
+
+**Edge case:** only `draft` mappings are mutable — adding an edge to a published
+mapping returns `409 "mapping N is 'published'; only draft mappings are mutable"`.
+Published mappings currently cannot be deleted (`409`) or reverted to draft — the
+error message says "archive instead" but no archive endpoint is implemented yet
+(known gap).
+
+---
+
+## 9. Schema Topology (Visualize → Topology)
+
+**Purpose:** an interactive graph visualizing table relationships between a source
+and target connection — real published-mapping edges, exact-name matches, AI-suggested
+matches for unmapped tables, and risk/PII annotations per column.
+
+### UI walkthrough
+1. `/dashboard/visualize/topology` — pick Source = `CRM_Source_Analytics`,
+   Target = `Data_Warehouse_Target`.
+2. If a **published mapping** exists between them (see §8), confirm the mapped
+   table pair shows a green "Mapped (N fields)" edge and is NOT flagged as an issue —
+   even though the table names differ (`crm_users` → `dw_customers`).
+3. Confirm genuinely unmapped tables (no real mapping, no exact name match) are
+   flagged in the "Issues & Annotations" panel with "Table 'X' not found in target
+   schema".
+4. Confirm the dashed purple "AI Match" edge connects the *correct* still-unmapped
+   source/target table pair (not an arbitrary first-node pairing) with a real
+   column-level suggestion and confidence score.
+5. Toggle "Source" / "Target" / "All" view filters and confirm the graph updates.
+6. Check the risk-level color coding on source columns (green=Low, amber=Medium,
+   red=High/PII) matches Schema Intel's classifications.
+7. Confirm the bottom KPI tiles (`Source Tables` / `Target Tables` / `Matched` /
+   `Issues`) match what's visually shown — `Matched` should count real mappings too,
+   not just exact-name matches.
+
+### API
+```bash
+curl -s "http://localhost:8000/api/v1/schema/graph?source_id=1&target_id=2" -H "Authorization: Bearer $TOK" | python3 -m json.tool
+```
+
+**Known scope limit:** this endpoint has no auth dependency at all today (pre-existing
+gap, not introduced by the topology-accuracy fix) — anyone with network access to the
+API can call it unauthenticated.
+
+---
+
+## 10. Pipelines
+
+**Purpose:** turn a published mapping into a schedulable, monitorable ETL pipeline —
+manual run, cron scheduling, retry policy, run history, re-run.
+
+### UI walkthrough
+1. `/dashboard/pipelines` — click "+ New", confirm the create modal fetches real
+   connectors + published mappings (won't let you pick a draft mapping).
+2. Create a pipeline from the published CRM→DW mapping (§8).
+3. Click "Run" — confirm it queues (202), and `RunMonitor` polls status through
+   pending → running → succeeded/failed.
+4. After it succeeds, confirm real rows moved: check the target SQLite file directly,
+   or re-scan the target table in Schema Intel and confirm row counts increased.
+5. Open `ScheduleEditor`, set a cron expression (e.g. `*/5 * * * *`), enable it —
+   confirm Celery Beat picks it up (`docker logs dataplane-beat` shows the scheduled
+   task).
+6. Set a retry policy (max attempts, backoff) — trigger a run against a deliberately
+   broken target (wrong path) and confirm it retries per policy before failing.
+7. Check `RunHistory` — filter by status/trigger, click into a past run's detail,
+   click "Re-run" and confirm it re-executes against the *original* pinned mapping
+   version (not whatever the mapping looks like now, even if edited since).
+8. Try running two instances of the same pipeline concurrently — confirm the second
+   is rejected (409, concurrency guard) rather than double-executing.
+9. Check drift detection: `GET .../drift` before a run — if the source schema changed
+   since the mapping was published, confirm the run is blocked with a clear message.
+
+### API
+```bash
+curl -s -X POST http://localhost:8000/api/v1/pipelines/ -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"name":"CRM to DW Pipeline","source_connection_id":1,"target_connection_id":2,"mapping_id":1}'
+
+curl -s -X POST http://localhost:8000/api/v1/pipelines/1/run -H "Authorization: Bearer $TOK"
+curl -s http://localhost:8000/api/v1/pipelines/1/runs -H "Authorization: Bearer $TOK" | python3 -m json.tool
+curl -s -X PUT http://localhost:8000/api/v1/pipelines/1/schedule -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"cron_expression":"0 * * * *","enabled":true,"timezone":"UTC"}'
+```
+
+---
+
+## 11. Visualize (Charting)
+
+**Purpose:** build charts (table/bar/line/area/pie/scatter/KPI) from any catalog
+table via a real SQL aggregation engine, with filters, saved views, and CSV/PNG
+export.
+
+### UI walkthrough
+1. `/dashboard/visualize` — pick a connection + table from the catalog-driven picker
+   (must be scanned first — Schema Intel §7).
+2. Add a dimension (group-by column) and a measure (aggregation: sum/avg/count/min/max)
+   — confirm the chart renders real aggregated data.
+3. Switch chart types (bar/line/area/pie/scatter/KPI/table) — confirm the type
+   selector grays out invalid combos (e.g. pie needs exactly 1 dimension + 1 measure).
+4. Add a filter (eq/neq/gt/lt/gte/lte/contains/between) — confirm the chart updates
+   (~300ms debounce).
+5. Save the current configuration as a named view — reload the page, confirm it
+   appears in the saved-views dropdown and restores exactly.
+6. Export as CSV — confirm the downloaded file has the actual displayed rows.
+7. Export as PNG — confirm a real chart image downloads (client-side SVG→canvas, no
+   server round-trip).
+8. If a masking policy exists on the selected column (§14), confirm non-exempt roles
+   see masked values in the chart; if a row-access policy exists, confirm the row
+   count differs by role.
+
+### API
+```bash
+curl -s -X POST http://localhost:8000/api/v1/viz/query -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"connection_id":1,"table_name":"crm_leads","dimensions":["status"],"measures":[{"field":"score","aggregation":"avg"}],"filters":[]}'
+```
+
+**Known scope limit:** data source is catalog tables only (not Query Studio saved
+results); chart renderers use a single dimension as the category axis even though
+multi-dimension aggregation itself works.
+
+---
+
+## 12. Query Studio
+
+**Purpose:** ad-hoc SQL execution against any connection, with write-statement
+confirmation, history, saved queries, CSV export.
+
+### UI walkthrough
+1. `/dashboard/query-studio` — pick a connection, write a `SELECT` query in the
+   `SqlEditor`, run it — confirm real paginated results in `ResultsTable`.
+2. Write a destructive statement (`DELETE FROM crm_leads WHERE id=999`) — confirm
+   `WriteConfirmModal` intercepts it and requires explicit confirmation before
+   executing (statement is classified server-side, not just client-side).
+3. Check `HistoryPanel` — confirm past queries (with connection, timestamp, row count)
+   are listed and re-runnable.
+4. Save a query via `SavedQueriesPanel`, reload, confirm it persists and can be
+   re-loaded into the editor.
+5. Export query results as CSV.
+6. Try a syntactically invalid query — confirm a clear error message, not a raw
+   traceback.
+
+### API
+```bash
+curl -s -X POST http://localhost:8000/api/v1/query-studio/execute -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"connection_id":1,"sql":"SELECT * FROM crm_users LIMIT 5","page":1,"page_size":100}'
+
+# Write statement without confirm=true:
+curl -s -X POST http://localhost:8000/api/v1/query-studio/execute -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"connection_id":1,"sql":"DELETE FROM crm_leads WHERE id=999","confirm":false}'
+# → {"requires_confirmation": true, "executed": false, "statement_type": "DELETE", ...}
+```
+
+**Known scope limit:** Security Admin's masking/row-filter policies are **not**
+enforced here (only in Visualize) — Query Studio runs arbitrary SQL with no
+structured table reference to scope a policy against safely.
+
+---
+
+## 13. AskData Bot
+
+**Purpose:** conversational natural-language-to-SQL assistant with session memory.
+
+### UI walkthrough
+1. `/dashboard/askdata` — pick a connection via `ConnectionPicker`.
+2. Ask a natural-language question (e.g. "how many leads came from the website?").
+3. Confirm the bot shows the generated SQL, executes it, and renders the answer +
+   result as a `ChatBubble`.
+4. Ask a follow-up question referencing the prior turn ("now break that down by
+   status") — confirm session context carries over (same `session_id`).
+5. Reload the page — confirm chat history for the session persists (fetched via
+   `GET /sessions/{id}/messages`).
+6. Delete the session — confirm history clears.
+7. Ask about a PII column — confirm the response doesn't leak raw values beyond
+   what the classification/guardrails intend (check against Schema Intel's
+   classification for that column).
+
+### API
+```bash
+curl -s -X POST http://localhost:8000/api/v1/askdata/ask -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"connection_id":1,"question":"How many leads have status qualified?"}'
+```
+
+---
+
+## 14. AI Autopilot
+
+**Purpose:** AI-driven schema-mapping recommendation engine with a guarded
+suggest/execute mode, approval queue, and policy controls per action type.
+
+### UI walkthrough
+1. `/dashboard/autopilot` — start a run: source = `CRM_Source_Analytics`,
+   target = `Data_Warehouse_Target`, mode = `suggest` first.
+2. Watch `RunConsole` stream logs live as the run progresses.
+3. Confirm recommendations land in `ApprovalQueue` (not auto-applied in suggest mode).
+4. Approve one recommendation, reject another, modify a third before approving —
+   confirm each action is reflected and audited.
+5. Check `PolicyPanel` — toggle whether a given action type requires approval or can
+   auto-execute; confirm the setting is respected on the next run.
+6. Run again in `execute` mode with a low-risk action type set to auto-execute —
+   confirm it applies without a manual approval step, but still logs to `ActionLog`.
+7. Check `GET /runs/{id}/status` while a run is in-flight vs. after completion.
+
+### API
+```bash
+curl -s -X POST http://localhost:8000/api/v1/autopilot/run -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"source_id":1,"target_id":2,"mode":"suggest"}'
+
+curl -s http://localhost:8000/api/v1/autopilot/recommendations -H "Authorization: Bearer $TOK" | python3 -m json.tool
+curl -s -X POST http://localhost:8000/api/v1/autopilot/recommendations/1/approve -H "Authorization: Bearer $TOK"
+```
+
+---
+
+## 15. Audit Trail
+
+**Purpose:** tamper-evident, hash-chained audit log across every module, with
+search/filter, export, retention, and integrity verification.
+
+### UI walkthrough
+1. `/dashboard/audit` — confirm events from everything you've tested above show up
+   (connector created, mapping published, pipeline run, role created, etc.).
+2. Filter by module, actor, event type, date range, outcome — confirm results narrow
+   correctly.
+3. Click into an event's detail — confirm before/after summaries render as readable
+   JSON, with a `CorrelationTimeline` showing related events by `correlation_id`.
+4. Export filtered results (CSV) — confirm the download matches the filter.
+5. Check `Verify Integrity` — confirm the hash-chain verification reports `valid: true`
+   on an untampered log.
+6. Check retention status — confirm it reports events approaching the retention
+   window (`AUDIT_RETENTION_DAYS`, default 90).
+
+### API
+```bash
+curl -s "http://localhost:8000/api/v1/audit/events?module=security&page_size=20" -H "Authorization: Bearer $TOK" | python3 -m json.tool
+curl -s -X POST http://localhost:8000/api/v1/audit/verify -H "Authorization: Bearer $TOK"
+# → {"valid": true, "total_events": N, "verified_events": N, ...}
+```
+
+**Tamper test (destructive — use a disposable environment):** directly edit an
+`audit_log` row via `docker exec dataplane-postgres psql ...` and re-run `/verify` —
+confirm it reports `valid: false` with `chain_broken_at` pointing at the tampered row.
+The DB itself should also reject the raw `UPDATE` (append-only trigger) unless you
+bypass it as superuser.
+
+---
+
+## 16. Security Admin
+
+**Purpose:** RBAC (roles/permissions/user assignment), a deny-by-default policy
+engine, and column-masking / row-level-access policies enforced in Visualize.
+
+### UI walkthrough — Roles tab
+1. `/dashboard/security` → **Roles** tab. Confirm `admin`/`analyst`/`viewer` show as
+   built-in (can't rename/deactivate/delete).
+2. Create a custom role (e.g. `auditor`). Confirm it's editable/deletable.
+3. Delete a role that's assigned to a user — confirm a warning listing affected
+   users appears before a second confirm actually deletes it.
+
+### Permissions tab
+4. Select the new role in the matrix — confirm every cell is unchecked (deny by
+   default). Grant `view` on a few modules, save, confirm it persists across reload.
+5. Confirm a non-admin (`analyst`/`viewer`) sees the matrix read-only (can't check
+   boxes).
+
+### Users tab
+6. Select a user, assign the new role, confirm it appears as a badge and the
+   "Effective permissions" table below updates to reflect the union of all their
+   roles' grants (with "via role(s)" attribution).
+7. Try revoking a user's *only* role — confirm a warning ("leaves them with zero
+   permissions") before a second confirm actually revokes it.
+
+### Masking tab
+8. Create a masking policy: connection = `CRM_Source_Analytics`, table = `crm_users`,
+   column = `email_address`, type = `redact`, exempt roles = `admin`.
+9. Use "Preview sample data" — confirm it shows real seeded emails masked to `***`.
+10. Go to Visualize (§11), query `crm_users.email_address` as the `viewer` test user
+    (§4) — confirm it shows `***`. Query as `admin` — confirm the real email.
+11. Try each masking type (`redact`/`hash`/`truncate`/`substitute`/`nullify`) and
+    confirm the output matches expectations (hash is deterministic + irreversible;
+    truncate keeps only the first character).
+
+### Row Filters tab
+12. Create a row filter: table = `crm_users`, condition `id > 4`, applies to
+    `viewer`. Query the table in Visualize as `viewer` — confirm only rows matching
+    the filter return. Query as `admin` — confirm all rows return.
+
+### Audit tab
+13. Confirm every action above (role create, permission save, user-role assign,
+    masking/row-filter create) shows up here with accurate before/after, and links
+    to the full Audit Trail.
+
+### API
+```bash
+curl -s http://localhost:8000/api/v1/roles/ -H "Authorization: Bearer $TOK" | python3 -m json.tool
+curl -s -X POST http://localhost:8000/api/v1/authz/check -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"module":"pipelines","action":"delete"}'
+# → {"allowed": true/false, "reason": "...", ...} — deny-by-default for viewer
+
+curl -s -X POST http://localhost:8000/api/v1/policies/masking -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"connection_id":1,"table_name":"crm_users","column_name":"email_address","masking_type":"redact","exempt_roles":["admin"]}'
+```
+
+**Known scope limits:** enforcement only reaches Visualize queries (not Query
+Studio); custom (non-canonical) roles don't affect the legacy `User.role` cache
+column used by some older `require_role()` call sites, only the new
+`AuthzService`/`POST /authz/check` contract.
+
+---
+
+## 17. Semantic / Metrics Layer
+
+**Purpose:** define reusable business entities, dimensions, and measures mapped to
+physical catalog columns, and certified metric definitions with versioning.
+
+### UI walkthrough
+1. `/dashboard/semantic` — create an entity (e.g. "Customer").
+2. Add a dimension and a measure to it, optionally mapping each to a real catalog
+   column (requires that connection to be scanned first — §7).
+3. Create a metric definition (e.g. "Total Revenue"), save as draft, then publish —
+   confirm publishing creates an immutable version and further edits create v2, not
+   mutate v1.
+4. Add lineage linking the metric to a catalog column.
+5. Use "Resolve" to test the metric's query resolution against real filters/time
+   grain — confirm it returns a valid, executable query shape.
+6. Search metrics by certified status.
+
+### API
+```bash
+curl -s -X POST http://localhost:8000/api/v1/semantic/entities -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"name":"Customer","description":"A CRM customer record"}'
+
+curl -s -X POST http://localhost:8000/api/v1/semantic/resolve -H "Authorization: Bearer $TOK" -H "Content-Type: application/json" \
+  -d '{"metric_id":1}'
+```
+
+---
+
+## 18. Tenant Isolation (not yet built)
+
+There is currently **no tenant/organization concept** in the app — every
+authenticated user of any role can see every connection, mapping, pipeline, and
+audit event regardless of who created it. This is a known, documented gap (not
+something to "test" as broken — it's explicitly out of scope until a dedicated
+build). See `requirements-specs/tenant_isolation_tasks/00_architecture_decision.md`
+for the full architecture decision and phased build plan.
+
+---
+
+## 19. Automated test suites
+
+### Backend (pytest)
+```bash
+cd backend
+source .venv/bin/activate   # or your venv path
+python -m pytest -q
+```
+Expect all tests passing (600+ tests across every module — connectors, pipelines,
+schema catalog, viz, security, audit, semantic, mapping, autopilot, askdata, query
+studio). Run a single module's suite while iterating, e.g. `pytest tests/security -q`.
+
+### Frontend
+```bash
+cd frontend
+npx tsc --noEmit                          # typecheck
+npx eslint . --max-warnings=0             # lint
+npx next build                            # production build (also typechecks + prerenders)
+npx vitest run                            # unit tests (where present, e.g. dashboard, audit, query-studio pages)
+```
+
+---
+
+## 20. Condensed regression checklist
+
+Use this as a fast pass after any change, before a deeper feature-specific pass:
+
+- [ ] `docker compose up -d` → all 6 containers healthy within ~1 minute
+- [ ] Login as admin, confirm `/dashboard` loads with real data
+- [ ] Connectors: list loads, test connection works, scan schema works
+- [ ] Schema Intel: scan a connection, confirm profiling + classification populate
+- [ ] Schema Mapper: create a draft mapping, add an edge, publish
+- [ ] Schema Topology: confirm a published mapping shows as matched, not "not found"
+- [ ] Pipelines: create from the published mapping, run it, confirm rows moved
+- [ ] Visualize: chart real data from a scanned table, save a view, export CSV
+- [ ] Query Studio: run a SELECT, confirm a DELETE requires confirmation
+- [ ] AskData: ask a question, get a real SQL-backed answer
+- [ ] Autopilot: start a suggest-mode run, see recommendations land in the queue
+- [ ] Audit Trail: confirm recent actions above are all logged; verify integrity passes
+- [ ] Security Admin: create a role, grant a permission, create a masking policy,
+      confirm it's enforced in Visualize for a non-exempt role
+- [ ] Semantic: create an entity + metric, publish it
+- [ ] Backend: `pytest -q` all green
+- [ ] Frontend: `next build` + `eslint --max-warnings=0` clean
+
+---
+
+## 21. Cleanup after testing
+
+Test data created during a pass (connections, mappings, pipelines, roles, masking
+policies, test users) should be cleaned up if you're testing against a shared/demo
+environment, mirroring what each feature's own delete/soft-delete affordance
+supports:
+
+```bash
+# Example: remove a test masking policy, role, and user created above
+curl -s -X DELETE http://localhost:8000/api/v1/policies/masking/<id> -H "Authorization: Bearer $TOK"
+curl -s -X DELETE "http://localhost:8000/api/v1/roles/<id>?confirm=true" -H "Authorization: Bearer $TOK"
+docker exec dataplane-api python3 -c "
+from app.core.database import SessionLocal
+from app.models.user import User
+db = SessionLocal()
+u = db.query(User).filter(User.email=='viewer_test@dataplane.ai').first()
+if u: db.delete(u); db.commit()
+"
+```
+
+Note: **published mappings cannot be deleted** via the API today (only draft ones) —
+if you published a test mapping, it will remain in the environment; this is a known
+gap (the error message references an "archive" path that isn't implemented yet).
