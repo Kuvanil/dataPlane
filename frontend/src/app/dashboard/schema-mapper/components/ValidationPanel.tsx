@@ -1,18 +1,30 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { classNames } from "../lib/format";
-import type { ValidationResponse } from "../lib/types";
+import type { ValidationResponse, FieldMapping, AISuggestion } from "../lib/types";
+import { writeWorkspaceHandoff } from "../../query-workspace/lib/handoff";
 
 interface ValidationPanelProps {
   validation: ValidationResponse | null;
   onClose: () => void;
   onJumpToEdge: (edgeId: number) => void;
+  /** Edges array from the current mapping — needed to resolve table/column from edge_id. */
+  edges?: FieldMapping[];
+  /** All suggestions (pending + decided) — needed to resolve table/column from suggestion_id. */
+  suggestions?: AISuggestion[];
+  /** Source connection ID for building the handoff. */
+  sourceConnectionId?: number | null;
 }
 
 export default function ValidationPanel({
   validation,
   onClose,
   onJumpToEdge,
+  edges,
+  suggestions,
+  sourceConnectionId,
 }: ValidationPanelProps) {
+  const router = useRouter();
   if (!validation) return null;
   const { blocking_count, warning_count, ok_count, issues } = validation;
   return (
@@ -66,15 +78,64 @@ export default function ValidationPanel({
                 </span>
                 <span className="flex-1">{iss.message}</span>
                 {iss.edge_id && (
-                  <button
-                    type="button"
-                    onClick={() => onJumpToEdge(iss.edge_id!)}
-                    className="text-[10px] text-blue-300 hover:underline shrink-0"
-                    aria-label="Jump to edge"
-                  >
-                    edge #{iss.edge_id} →
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => onJumpToEdge(iss.edge_id!)}
+                      className="text-[10px] text-blue-300 hover:underline shrink-0"
+                      aria-label="Jump to edge"
+                    >
+                      edge #{iss.edge_id} →
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (sourceConnectionId == null) return;
+                        // Try to resolve the edge to get source table/column
+                        const edge = edges?.find((e) => e.id === iss.edge_id);
+                        if (edge && edge.sources.length > 0) {
+                          const src = edge.sources[0];
+                          writeWorkspaceHandoff({
+                            connectionId: sourceConnectionId,
+                            mode: "sql",
+                            sql: `SELECT ${src.column} FROM ${src.table} WHERE ${src.column} IS NOT NULL LIMIT 100;`,
+                            banner: { sourceModule: "schema_mapper", summary: `Validation issue on edge #${iss.edge_id} — ${iss.message}` },
+                          });
+                          router.push("/dashboard/query-workspace");
+                        }
+                      }}
+                      className="text-[10px] text-emerald-400 hover:underline shrink-0"
+                      aria-label="Investigate edge"
+                    >
+                      Investigate →
+                    </button>
+                  </>
                 )}
+                {!iss.edge_id && iss.suggestion_id && (() => {
+                  const suggestion = suggestions?.find((s) => s.id === iss.suggestion_id);
+                  // Without a resolved suggestion there's no real table/column to query —
+                  // don't render a button that would send a fabricated query (no placeholder UI).
+                  if (!suggestion) return null;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (sourceConnectionId == null) return;
+                        writeWorkspaceHandoff({
+                          connectionId: sourceConnectionId,
+                          mode: "sql",
+                          sql: `SELECT ${suggestion.source_column}, COUNT(*) FROM ${suggestion.source_table} GROUP BY ${suggestion.source_column} ORDER BY COUNT(*) DESC LIMIT 50;`,
+                          banner: { sourceModule: "schema_mapper", summary: `Validation issue (suggestion #${iss.suggestion_id}) — ${iss.message}` },
+                        });
+                        router.push("/dashboard/query-workspace");
+                      }}
+                      className="text-[10px] text-emerald-400 hover:underline shrink-0"
+                      aria-label="Investigate suggestion issue"
+                    >
+                      Investigate →
+                    </button>
+                  );
+                })()}
               </li>
             ))}
           </ul>

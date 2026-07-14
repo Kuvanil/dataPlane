@@ -1,14 +1,19 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { classNames, formatTimestamp } from "../lib/format";
 import type { DriftHistoryResponse } from "../lib/types";
+import { writeWorkspaceHandoff } from "../../query-workspace/lib/handoff";
 
 interface DriftHistoryPanelProps {
   history: DriftHistoryResponse | null;
   onRescan: () => void;
   role: string | null;
+  /** The current connection ID, needed for building the handoff. */
+  connectionId?: number | null;
 }
 
-export default function DriftHistoryPanel({ history, onRescan, role }: DriftHistoryPanelProps) {
+export default function DriftHistoryPanel({ history, onRescan, role, connectionId }: DriftHistoryPanelProps) {
+  const router = useRouter();
   const canRescan = role === "admin" || role === "analyst";
 
   return (
@@ -61,6 +66,34 @@ export default function DriftHistoryPanel({ history, onRescan, role }: DriftHist
                   {Object.keys(s.drift_event.type_changes).length > 0 && (
                     <div>type changes: {Object.entries(s.drift_event.type_changes).map(([t, cols]) => `${t}.${cols.join(",")}`).join("; ")}</div>
                   )}
+                  {/* Investigate actions for each affected table (non-removed) */}
+                  <div className="mt-1.5 flex flex-wrap gap-1">
+                    {[
+                      ...new Set([
+                        ...Object.keys(s.drift_event.columns_added),
+                        ...Object.keys(s.drift_event.columns_removed),
+                        ...Object.keys(s.drift_event.type_changes),
+                      ]),
+                    ].map((tableName) => (
+                      <button
+                        key={tableName}
+                        type="button"
+                        onClick={() => {
+                          if (connectionId == null) return;
+                          writeWorkspaceHandoff({
+                            connectionId,
+                            mode: "sql",
+                            sql: `SELECT * FROM ${tableName} LIMIT 100;`,
+                            banner: { sourceModule: "schema_intel", summary: `Drift on ${tableName} — see changed columns below` },
+                          });
+                          router.push("/dashboard/query-workspace");
+                        }}
+                        className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-300 border border-blue-500/20 hover:bg-blue-500/20"
+                      >
+                        Investigate {tableName} →
+                      </button>
+                    ))}
+                  </div>
                 </div>
               )}
             </li>

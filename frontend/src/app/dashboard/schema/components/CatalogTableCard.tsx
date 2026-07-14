@@ -1,7 +1,9 @@
 "use client";
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import { classNames, classificationColor, formatPercent, formatRelativeTime, methodLabel } from "../lib/format";
 import type { CatalogColumn, CatalogTable, ClassificationLabel, Role } from "../lib/types";
+import { writeWorkspaceHandoff } from "../../query-workspace/lib/handoff";
 
 interface CatalogTableCardProps {
   table: CatalogTable;
@@ -10,6 +12,7 @@ interface CatalogTableCardProps {
 }
 
 export default function CatalogTableCard({ table, role, onOverride }: CatalogTableCardProps) {
+  const router = useRouter();
   const [expanded, setExpanded] = useState(true);
   const [overrideColumn, setOverrideColumn] = useState<CatalogColumn | null>(null);
   const canOverride = role === "admin" || role === "analyst";
@@ -77,15 +80,38 @@ export default function CatalogTableCard({ table, role, onOverride }: CatalogTab
                   {col.profile ? `${col.profile.min_value ?? "—"} / ${col.profile.max_value ?? "—"}` : "—"}
                 </td>
                 <td className="px-3 py-2 text-right">
-                  {canOverride && (
-                    <button
-                      type="button"
-                      onClick={() => setOverrideColumn(col)}
-                      className="text-[11px] text-blue-400 hover:text-blue-300"
-                    >
-                      Override
-                    </button>
-                  )}
+                  <div className="flex items-center gap-1 justify-end">
+                    {/* Investigate button — visible for High-risk/PII labels */}
+                    {col.classification?.label === "PII" && (() => {
+                      const cls = col.classification!;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            writeWorkspaceHandoff({
+                              connectionId: table.connection_id,
+                              mode: "ask",
+                              prefillQuestion: `What does the current data in ${table.table_name}.${col.column_name} look like, and is there anything that looks like exposed PII I should be aware of?`,
+                              banner: { sourceModule: "schema_intel", summary: `PII review — ${table.table_name}.${col.column_name} (${cls.label})` },
+                            });
+                            router.push("/dashboard/query-workspace");
+                          }}
+                          className="text-[11px] text-emerald-400 hover:text-emerald-300"
+                        >
+                          Investigate →
+                        </button>
+                      );
+                    })()}
+                    {canOverride && (
+                      <button
+                        type="button"
+                        onClick={() => setOverrideColumn(col)}
+                        className="text-[11px] text-blue-400 hover:text-blue-300"
+                      >
+                        Override
+                      </button>
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}

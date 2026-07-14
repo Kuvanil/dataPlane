@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import AskDataPage from "../page";
+import AskDataView from "../../query-workspace/components/AskDataView";
 import { ApiError } from "@/lib/api";
 import type { AskDataAskResponse } from "../lib/types";
 
@@ -39,7 +39,7 @@ function askResult(overrides: Partial<AskDataAskResponse> = {}): AskDataAskRespo
   };
 }
 
-describe("AskDataPage", () => {
+describe("AskDataView", () => {
   beforeEach(() => {
     getMock.mockReset();
     postMock.mockReset();
@@ -53,7 +53,7 @@ describe("AskDataPage", () => {
 
   it("sends a question and renders the answer, SQL, and result table", async () => {
     postMock.mockResolvedValue(askResult());
-    render(<AskDataPage />);
+    render(<AskDataView connections={[{ id: 1, name: "widgets-db", type: "sqlite" }]} connectionId={1} setConnectionId={vi.fn()} onEditInSql={vi.fn()} />);
 
     await waitFor(() => expect(screen.getByText(/widgets-db/)).toBeInTheDocument());
 
@@ -75,7 +75,7 @@ describe("AskDataPage", () => {
     postMock.mockResolvedValueOnce(askResult({ session_id: "abc-123" }));
     postMock.mockResolvedValueOnce(askResult({ session_id: "abc-123", summary: "Found 2 rows" }));
 
-    render(<AskDataPage />);
+    render(<AskDataView connections={[{ id: 1, name: "widgets-db", type: "sqlite" }]} connectionId={1} setConnectionId={vi.fn()} onEditInSql={vi.fn()} />);
     await waitFor(() => expect(screen.getByText(/widgets-db/)).toBeInTheDocument());
 
     const input = screen.getByPlaceholderText("Ask about your data…");
@@ -96,7 +96,7 @@ describe("AskDataPage", () => {
       masked_columns: ["email"],
       rows: [{ id: 1, name: "Alice", email: "***REDACTED***" }],
     }));
-    render(<AskDataPage />);
+    render(<AskDataView connections={[{ id: 1, name: "widgets-db", type: "sqlite" }]} connectionId={1} setConnectionId={vi.fn()} onEditInSql={vi.fn()} />);
     await waitFor(() => expect(screen.getByText(/widgets-db/)).toBeInTheDocument());
 
     fireEvent.change(screen.getByPlaceholderText("Ask about your data…"), { target: { value: "q" } });
@@ -105,11 +105,11 @@ describe("AskDataPage", () => {
     await waitFor(() => expect(screen.getByText(/Masked: email/)).toBeInTheDocument());
   });
 
-  it("stores a Query Studio handoff in sessionStorage and navigates", async () => {
+  it("calls onEditInSql when clicking Edit in Query Studio", async () => {
+    const onEditInSql = vi.fn();
     postMock.mockResolvedValue(askResult());
-    const setItemSpy = vi.spyOn(Storage.prototype, "setItem");
 
-    render(<AskDataPage />);
+    render(<AskDataView connections={[{ id: 1, name: "widgets-db", type: "sqlite" }]} connectionId={1} setConnectionId={vi.fn()} onEditInSql={onEditInSql} />);
     await waitFor(() => expect(screen.getByText(/widgets-db/)).toBeInTheDocument());
     fireEvent.change(screen.getByPlaceholderText("Ask about your data…"), { target: { value: "q" } });
     fireEvent.click(screen.getByText("Send"));
@@ -117,15 +117,15 @@ describe("AskDataPage", () => {
 
     fireEvent.click(screen.getByText("Edit in Query Studio →"));
 
-    expect(setItemSpy).toHaveBeenCalledWith(
-      "qs-handoff",
-      JSON.stringify({ connectionId: 1, sql: "SELECT * FROM customers LIMIT 100;" }),
-    );
+    expect(onEditInSql).toHaveBeenCalledWith(1, "SELECT * FROM customers LIMIT 100;");
+    // The old sessionStorage + hard-navigation handoff was removed entirely —
+    // ChatBubble always calls onEditInSql directly now.
+    expect(sessionStorage.getItem("qs-handoff")).toBeNull();
   });
 
   it("shows an error message when the API call fails", async () => {
     postMock.mockRejectedValue(new ApiError(500, "boom"));
-    render(<AskDataPage />);
+    render(<AskDataView connections={[{ id: 1, name: "widgets-db", type: "sqlite" }]} connectionId={1} setConnectionId={vi.fn()} onEditInSql={vi.fn()} />);
     await waitFor(() => expect(screen.getByText(/widgets-db/)).toBeInTheDocument());
 
     fireEvent.change(screen.getByPlaceholderText("Ask about your data…"), { target: { value: "q" } });

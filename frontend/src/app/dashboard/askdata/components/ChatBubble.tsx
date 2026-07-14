@@ -2,12 +2,7 @@
 import { useState } from "react";
 import { ChatTurn } from "../lib/types";
 
-function sendToQueryStudio(connectionId: number, sql: string) {
-  sessionStorage.setItem("qs-handoff", JSON.stringify({ connectionId, sql }));
-  window.location.href = "/dashboard/query-studio";
-}
-
-export default function ChatBubble({ turn, connectionId }: { turn: ChatTurn; connectionId: number | null }) {
+export default function ChatBubble({ turn, connectionId, onEditInSql }: { turn: ChatTurn; connectionId: number | null; onEditInSql: (connectionId: number, sql: string) => void }) {
   const [showSql, setShowSql] = useState(false);
   const isUser = turn.role === "user";
   const res = turn.response;
@@ -86,7 +81,7 @@ export default function ChatBubble({ turn, connectionId }: { turn: ChatTurn; con
         {res?.sql && connectionId != null && (
           <div className="mt-2">
             <button
-              onClick={() => sendToQueryStudio(connectionId, res.sql as string)}
+              onClick={() => onEditInSql(connectionId, res.sql as string)}
               className="text-[10px] px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-300"
             >
               Edit in Query Studio →

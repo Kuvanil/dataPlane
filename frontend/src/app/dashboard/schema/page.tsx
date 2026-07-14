@@ -107,7 +107,7 @@ export default function SchemaIntelPage() {
           </div>
         )}
 
-        <DriftHistoryPanel history={c.driftHistory} onRescan={() => void c.rescanForDrift()} role={c.role} />
+        <DriftHistoryPanel history={c.driftHistory} onRescan={() => void c.rescanForDrift()} role={c.role} connectionId={c.connectionId} />
       </div>
 
       <Toast toast={c.toast} onDismiss={c.clearToast} />

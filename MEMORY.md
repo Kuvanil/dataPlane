@@ -21,6 +21,47 @@ This is a working log for agents (Kimchi and others) that don't retain context b
 
 ## Log
 
+- 2026-07-14 — Scoped (spec only, no code) a new epic to merge AskData Bot and Query Studio —
+  both already fully built as separate sidebar tabs (8/9 FRs each) — into one dashboard tab with
+  an Ask/SQL mode toggle. `requirements-specs-v2/query_workspace_tasks/INDEX.md` + 8 task files
+  (shared shell keeping both subviews mounted, single connection source of truth, replacing the
+  existing `sessionStorage["qs-handoff"]` + hard-navigation link between them with an in-shell
+  callback, write-confirm-modal-survives-mode-switch guardrail, keyboard-shortcut scoping,
+  sidebar/route consolidation with redirects for the old `/dashboard/askdata` and
+  `/dashboard/query-studio` paths, an audit-trail label-clarity check, and test consolidation).
+  Extended same day per follow-up: added tasks #9-#12 for "Investigate in Query Workspace"
+  handoffs from Schema Intel (drift events, PII/classification badges) and Schema Mapper (AI
+  suggestions, validation issues) — a new, generalized `sessionStorage`-based `WorkspaceHandoff`
+  contract (distinct from the #1-#8 in-shell callback, since Schema Intel/Mapper stay separate
+  routes). Confirmed via audit: neither feature has any existing outbound cross-tab link today,
+  and neither TRD specifies this as an FR — net-new UX. 12 tasks total, not started.
+- 2026-07-14 (same day, later) — Query Workspace epic built (by a separate session) and then
+  reviewed + fixed in this pass — full detail in
+  `requirements-specs-v2/query_workspace_tasks/INDEX.md`'s progress log,
+  `bugs.md`/`enhancements.md` in that same directory. New: `/dashboard/query-workspace`
+  (`QueryWorkspaceInner.tsx` + `AskDataView`/`SqlWorkspaceView` subviews, both kept permanently
+  mounted and toggled via CSS so state survives a mode switch), `handoff.ts`'s
+  `WorkspaceHandoff`/`writeWorkspaceHandoff`/`readAndClearWorkspaceHandoff`, "Investigate →"
+  actions wired into Schema Intel (`DriftHistoryPanel`, `CatalogTableCard`) and Schema Mapper
+  (`SuggestionPanel`, `ValidationPanel`), old `/dashboard/askdata` + `/dashboard/query-studio`
+  routes replaced with thin redirects. Review found and fixed 5 real bugs before calling it done:
+  a hardcoded placeholder query (`SELECT * FROM related_table`) on one Investigate action — a
+  genuine no-mock-UI violation, not just a style nit; a half-wired background-completion badge
+  that could never fire for AskData (SQL side worked, Ask side didn't); dead
+  `sessionStorage["qs-handoff"]` + hard-navigation code left in `ChatBubble.tsx` that task #3 had
+  explicitly said to delete; a shipped SQL-handoff mechanism (ref + `setTimeout(...,0)`) that
+  wasn't the one its own tests exercised; and, caught only by running `npm run lint` (not manual
+  review) — this repo's ESLint config already enforces the newer `react-hooks/refs` /
+  `react-hooks/set-state-in-effect` rules — a shell-level modal reading `ref.current` during
+  render and a mount-only effect doing 5 setState calls instead of using a lazy `useState`
+  initializer. **Lesson worth repeating for future epics: always run the project's actual lint
+  config as part of "done," not just tsc/build/tests** — it caught two real bugs neither manual
+  review nor the test suite would have. Also added the test coverage the epic's own tasks #8/#12
+  asked for but hadn't landed (0 → 106 vitest tests passing for this epic's code, up from having
+  none for the shell itself or any of the four investigate actions). Verified: `tsc --noEmit`
+  clean, `npm run lint` clean for every file touched, `npm run build` clean (19/19 routes),
+  `npx vitest run` 106/106. Not yet exercised against a live backend/browser — no Docker/browser
+  automation available this pass. **Uncommitted.**
 - 2026-07-09 — Resolved the decision-blocked items surfaced by the bug-validation sweep, per user choice ("just resolve the decisions, implement what's unblocked"): (1) **Mapper #02 keyboard a11y** — `Canvas.tsx`'s existing click-to-stage/click-to-connect flow (built for N:1 mapping) is now keyboard-operable: actionable rows get `tabIndex=0`/`role=button`/`aria-pressed`/`aria-label`, Enter/Space fire the same `activate()` as click, plus a visually-hidden `aria-live` region announcing staging/connection events. Reused the existing mechanism rather than inventing a new interaction model. (2) **Mapper #04 virtualization** — added `react-window` (`FixedSizeList`), which forced a real architectural fix alongside it: the connector-line SVG overlay assumed absolute unscrolled row positions, so virtualizing without more would have silently misaligned connector lines the moment a panel scrolled. Fixed by tracking each panel's scrollTop and having the overlay hide (never mis-draw) a connector whose endpoint has scrolled out of view. Below the new bounded-height cap (560px), rendering is pixel-identical to before — only large schemas actually virtualize. 7 new tests in `schema-mapper/__tests__/Canvas.test.tsx`. (3) **Schema Intel #05 classification confidence** — presented 3 options, user chose defer entirely (real confidence needs profiling/FR2 first; a rule-based interim score would be a second path to retire later — not worth it). Documented, no code. (4) **Tenant isolation** — user chose "draft the architecture decision + epic spec, no code." Wrote `requirements-specs/tenant_isolation_tasks/00_architecture_decision.md`: recommends row-level `tenant_id` + Postgres RLS (not app-filtering alone — a missed WHERE clause is a real leak) over schema-per-tenant or DB-per-tenant, full 11-root/13-child table inventory, data model + auth sketch, 5 open questions for Security/Product (tenant cardinality per user, physical-isolation requirement, platform-superadmin bypass, rollout sequencing, legacy-data backfill). This is the **first substantive proposal** after six prior epics (mapper #7, schema_intel #9, connector #10, dashboard #9, autopilot #11, plus the original `review_schema_mapper_tasks/CONTRADICTIONS.md` C4) all independently flagged the same gap and said "wait for a decision" — updated all six to point here instead of restating the finding a seventh time. Also noted: `Pipeline.tenant_id` (a nullable `String` placeholder added speculatively during the pipelines build) needs retyping to a real FK once this lands. Verified: frontend tsc/build clean, vitest 70/70 (17 new), lint at 29-problem baseline; backend untouched this round (docs + frontend only). Live: frontend container rebuilt/deployed; no browser-automation tooling (Playwright/chromium-cli) available in this environment, so the interactive keyboard/virtualization behavior was verified via RTL's real-DOM/real-event simulation rather than an actual browser screenshot — flagged explicitly rather than overclaimed. **Uncommitted.**
 - 2026-07-09 — Dashboard bugs round 2: fixed #02, #03, #05 from `dashboard_tasks/bugs/INDEX.md`; reviewed #01 and left it by design (see that INDEX's disposition note — accepted per-process cache tradeoff, not a defect); #04 already confirmed stale/fixed in the round-1 pass. Frontend-only changes: `useWidgetData` fetchers now take `(signal: AbortSignal)` and the hook actually cancels a superseded/unmounted request instead of just discarding its result (`api.get` gained an optional `{ signal }` param); `setUnauthorizedHandler`'s single nullable slot replaced with `addUnauthorizedHandler(fn) -> unregister` backed by a `Set`, so a second concurrent registrant can't clobber the first (only caller, `useMapping.ts`, migrated — no shim kept); new `page.test.tsx` (9 tests) closes the real gap in #05 — every dashboard leaf component already had tests, `page.tsx`'s composition/wiring logic (237 lines) didn't. New `src/lib/__tests__/api.test.ts`. Verified: tsc clean, vitest 63/63 (16 new), lint at 29-problem baseline, build clean. Backend untouched this round. **Uncommitted.**
 - 2026-07-09 — Time-boxed review pass across the newly-added `requirements-specs/*/bugs/` validation reports (autopilot, connectors, dashboard, mapper, pipelines, schema_intel — one per epic). Fixed the one live, actionable, previously-under-scoped item found: connector_tasks bug #03 (SQL injection via f-string table-name interpolation) was filed against Postgres only, but the same pattern existed in `mysql.py` (pointless f-string, no interpolated value) and `sqlite.py`/`oracle.py` (`PRAGMA table_info({table_name})` / `PRAGMA foreign_key_list({table_name})`, which can't take bound params — fixed via identifier quoting instead). All 4 connectors fixed; suite re-run 335/335 (no new test — no reachable malicious-input path since table names only ever come from `get_tables()`, fixed as defense-in-depth per the bug's own "high in principle" framing). Also found dashboard_tasks bug #04 ("per-module rollback missing") to be a **stale report** — the rollback was already added in the 2026-07-07 build; corrected the record rather than re-fixing already-fixed code. Left untouched, correctly: pipelines bugs #12–19 (already fixed pre-existing), mapper #02/#04 ([?] need human input) and #07 ([!] blocked), schema_intel #04/#06/#07/#08 (unbuilt features, not bugs) and #05 ([?]), dashboard #01/#02/#03/#05 (LOW, legitimate backlog, not broken behavior) — none of these are "fix in 10 minutes" scope.

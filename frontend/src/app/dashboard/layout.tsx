@@ -15,8 +15,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     { id: "schema", label: "Schema Intel", icon: "🧠", href: "/dashboard/schema" },
     { id: "schema-mapper", label: "Schema Mapper", icon: "🗺️", href: "/dashboard/schema-mapper" },
     { id: "semantic", label: "Semantic / Metrics", icon: "📐", href: "/dashboard/semantic" },
-    { id: "query-studio", label: "Query Studio", icon: "💬", href: "/dashboard/query-studio" },
-    { id: "askdata", label: "AskData Bot", icon: "🤖", href: "/dashboard/askdata" },
+    { id: "query-workspace", label: "Query Workspace", icon: "💬", href: "/dashboard/query-workspace" },
     { id: "pipelines", label: "Pipelines", icon: "🔗", href: "/dashboard/pipelines" },
     { id: "autopilot", label: "AI Autopilot", icon: "⚙️", href: "/dashboard/autopilot" },
     { id: "security", label: "Security", icon: "🛡️", href: "/dashboard/security" },
@@ -39,7 +38,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
               >
                 <span className="text-base">{item.icon}</span>
                 {item.label}
-                {item.id === "askdata" && <span className="ml-auto w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />}
+                {item.id === "query-workspace" && <span className="ml-auto w-1.5 h-1.5 bg-emerald-400 rounded-full animate-pulse" />}
               </Link>
             );
           })}

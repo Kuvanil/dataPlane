@@ -177,6 +177,9 @@ export default function SchemaMapperPage() {
                     validation={m.validation}
                     onClose={() => { /* hide by re-render: caller can re-toggle */ }}
                     onJumpToEdge={handleJumpToEdge}
+                    edges={m.edges}
+                    suggestions={m.suggestions}
+                    sourceConnectionId={mapping?.source_id}
                   />
                 )}
                 {/* Suggestions are a draft-only workflow: publish supersedes
@@ -192,6 +195,7 @@ export default function SchemaMapperPage() {
                     onRequest={m.requestSuggestions}
                     onAccept={(id) => m.acceptSuggestion(id)}
                     onReject={(id) => m.rejectSuggestion(id)}
+                    sourceConnectionId={mapping?.source_id}
                   />
                 )}
               </div>

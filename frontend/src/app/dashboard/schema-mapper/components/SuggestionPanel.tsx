@@ -1,6 +1,8 @@
 "use client";
+import { useRouter } from "next/navigation";
 import { classNames, formatPercent, truncate } from "../lib/format";
 import type { AISuggestion, Role } from "../lib/types";
+import { writeWorkspaceHandoff } from "../../query-workspace/lib/handoff";
 
 interface SuggestionPanelProps {
   pending: AISuggestion[];
@@ -10,6 +12,8 @@ interface SuggestionPanelProps {
   onRequest: () => void;
   onAccept: (id: number) => void;
   onReject: (id: number) => void;
+  /** The source connection ID for the current mapping — used for investigate handoffs. */
+  sourceConnectionId?: number | null;
 }
 
 export default function SuggestionPanel({
@@ -20,7 +24,9 @@ export default function SuggestionPanel({
   onRequest,
   onAccept,
   onReject,
+  sourceConnectionId,
 }: SuggestionPanelProps) {
+  const router = useRouter();
   const canEdit = role === "admin" || role === "analyst";
   return (
     <section
@@ -80,6 +86,23 @@ export default function SuggestionPanel({
                   </span>
                   {canEdit && (
                     <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (sourceConnectionId == null) return;
+                          writeWorkspaceHandoff({
+                            connectionId: sourceConnectionId,
+                            mode: "sql",
+                            sql: `SELECT ${s.source_column}, COUNT(*) FROM ${s.source_table} GROUP BY ${s.source_column} ORDER BY COUNT(*) DESC LIMIT 50;`,
+                            banner: { sourceModule: "schema_mapper", summary: `Reviewing suggestion — ${s.source_table}.${s.source_column} → ${s.target_table}.${s.target_column} (${formatPercent(s.confidence)} confidence)` },
+                          });
+                          router.push("/dashboard/query-workspace");
+                        }}
+                        className="px-2 py-1 text-[11px] font-semibold rounded bg-blue-500/15 text-blue-300 border border-blue-500/30 hover:bg-blue-500/25"
+                        aria-label="Investigate suggestion"
+                      >
+                        Investigate →
+                      </button>
                       <button
                         type="button"
                         onClick={() => onAccept(s.id)}
