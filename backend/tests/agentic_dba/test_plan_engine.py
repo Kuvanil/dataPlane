@@ -140,6 +140,41 @@ def test_llm_ungrounded_output_is_rejected(db, retail_connection, admin, monkeyp
     assert any("grounding/shape validation" in n for n in plan.confidence_notes)
 
 
+def test_llm_unsafe_type_is_rejected(db, retail_connection, admin, monkeypatch):
+    """Regression (v3 bugs2 #2): an LLM adaptation whose column `type` isn't a
+    plain SQL type token must be rejected wholesale (grounding validation),
+    not passed verbatim into generated DDL."""
+    import json as json_module
+
+    from app.core.config import settings
+    monkeypatch.setattr(settings, "AGENTIC_DBA_LLM_ENABLED", True)
+
+    class _Resp:
+        status_code = 200
+
+        @staticmethod
+        def json():
+            return {"response": json_module.dumps([{
+                "name": "dim_customers",
+                "columns": [{"name": "email", "type": "TEXT); DROP TABLE users; --",
+                             "nullable": True, "primary_key": False,
+                             "source_refs": [{"table": "customers", "column": "email"}]}],
+            }])}
+
+    monkeypatch.setattr("app.services.agentic_dba_engine.requests.post",
+                        lambda *a, **k: _Resp())
+
+    plan = generate_plan(db, create_plan(
+        db, question=RETAIL_QUESTION, connection_id=retail_connection.id,
+        session_id=None, actor=admin.email).id)
+    assert plan.status == "ready"
+    assert any("grounding/shape validation" in n for n in plan.confidence_notes)
+    # No generated DDL statement carries the injected fragment.
+    all_sql = " ".join(s for obj in (plan.generated_ddl or [])
+                       for s in obj.get("statements", []))
+    assert "DROP TABLE users" not in all_sql
+
+
 def test_plan_api_flow(client_admin, db, retail_connection, monkeypatch):
     """POST /plan -> 202 generating; GET /plans/{id} reflects readiness."""
     from app.api.routers import agentic_dba as router_module

@@ -69,10 +69,19 @@ class SecretManager(ABC):
 def secret_manager_enabled() -> bool:
     """Whether vaulting is actively configured. False = legacy behavior
     (secrets stay in config; response-layer redaction still applies) —
-    existing deployments don't break the moment this code ships."""
-    if settings.SECRET_MANAGER_BACKEND == "keeper":
+    existing deployments don't break the moment this code ships.
+
+    An UNKNOWN backend raises rather than returning False: a typo'd backend
+    name must not silently fall through to legacy plaintext storage while the
+    operator believes vaulting is on (a silent security downgrade)."""
+    backend = settings.SECRET_MANAGER_BACKEND
+    if backend == "keeper":
         return bool(settings.KSM_CONFIG_PATH)
-    return bool(settings.SECRETS_ENCRYPTION_KEY)
+    if backend == "aes256":
+        return bool(settings.SECRETS_ENCRYPTION_KEY)
+    raise SecretManagerNotConfigured(
+        f"unknown SECRET_MANAGER_BACKEND '{backend}' (expected 'aes256' or 'keeper')"
+    )
 
 
 def get_secret_manager() -> SecretManager:

@@ -33,6 +33,12 @@ from app.services.transformation_proposer import propose_transformations
 logger = logging.getLogger(__name__)
 
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# A SQL type token: a type name (optionally multi-word like DOUBLE PRECISION)
+# with an optional precision/scale. Anchors the LLM-supplied `type` to the
+# same grounding discipline as identifiers, so a crafted value can't flow
+# verbatim into generated DDL (defense in depth — the write path also rejects
+# multi-statement SQL, but an ungrounded type must fail validation, not apply).
+_TYPE_RE = re.compile(r"^[A-Za-z][A-Za-z0-9 ]*(\(\s*\d+\s*(,\s*\d+\s*)?\))?$")
 
 # ── Domain template library (design decision #11: deterministic first) ────
 # A template is a *starting draft* adapted to the discovered catalog, not a
@@ -217,9 +223,12 @@ def _validate_llm_tables(payload: Any,
                     "table": key[0], "column": key[1],
                     "type": catalog_cols[key].get("type"),
                 })
+            col_type = str(col.get("type") or "TEXT").strip()
+            if not _TYPE_RE.fullmatch(col_type):
+                return None  # ungrounded/unsafe type — reject the whole adaptation
             out_cols.append({
                 "name": col["name"],
-                "type": str(col.get("type") or "TEXT"),
+                "type": col_type,
                 "nullable": bool(col.get("nullable", True)),
                 "primary_key": bool(col.get("primary_key", False)),
                 "source_refs": out_refs,

@@ -34,6 +34,18 @@ def test_uniqueness_ratio_caps_at_one():
     assert compute_uniqueness_ratio(120, 100) == 1.0
 
 
+def test_uniqueness_ratio_uses_scanned_population_on_large_tables():
+    # Regression (v3 bugs2 #1): distinct_count is measured over the first
+    # `scanned_rows`, not the full table. A genuinely-unique key column on a
+    # 1M-row table scanned at 100k must read ~1.0 (so the UNIQUE DQ rule
+    # fires), NOT 0.1 (which silently disabled it).
+    assert compute_uniqueness_ratio(100_000, 1_000_000, scanned_rows=100_000) == 1.0
+    # Without the scan cap, the old math understates it and no rule can fire.
+    assert compute_uniqueness_ratio(100_000, 1_000_000) == 0.1
+    # A small table (below the cap) is unchanged: denominator stays row_count.
+    assert compute_uniqueness_ratio(80, 100, scanned_rows=100_000) == 0.8
+
+
 def test_count_duplicates():
     assert count_duplicate_values(["a", "b", "a", "c", "b", "a"]) == 2  # a and b repeat
     assert count_duplicate_values(["a", "b", "c"]) == 0

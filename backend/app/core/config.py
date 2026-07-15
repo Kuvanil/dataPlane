@@ -1,3 +1,4 @@
+from pydantic import field_validator
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
@@ -90,6 +91,17 @@ class Settings(BaseSettings):
     # one-time-token bootstrap. A mounted file — NEVER a literal token.
     KSM_CONFIG_PATH: str | None = None
     KSM_FOLDER_UID: str = ""
+
+    @field_validator("SECRET_MANAGER_BACKEND")
+    @classmethod
+    def _validate_secret_backend(cls, v: str) -> str:
+        # Fail fast at boot on a typo'd backend name rather than silently
+        # storing connector credentials in plaintext at runtime.
+        allowed = {"aes256", "keeper"}
+        if v not in allowed:
+            raise ValueError(
+                f"SECRET_MANAGER_BACKEND must be one of {sorted(allowed)}, got '{v}'")
+        return v
 
     class Config:
         env_file = ".env"

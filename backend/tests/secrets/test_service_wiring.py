@@ -259,3 +259,28 @@ def test_retrieve_audit_batched_per_connection(db, pg_connection):
     )
     assert len(rows) == 1  # one audit per TTL window, not one per call
     assert rows[0].event_metadata["batched_window_seconds"] == 60
+
+
+# ── Backend selection fail-fast (v5 bugs2 #3) ────────────────────────────
+
+def test_unknown_backend_fails_fast_not_silent_plaintext(monkeypatch):
+    """A typo'd backend name must not silently fall back to legacy plaintext
+    storage while the operator believes vaulting is on."""
+    from app.core.config import settings
+    from app.services.secret_manager import (
+        SecretManagerNotConfigured, get_secret_manager, secret_manager_enabled)
+    monkeypatch.setattr(settings, "SECRET_MANAGER_BACKEND", "ksm")  # typo for 'keeper'
+    monkeypatch.setattr(settings, "SECRETS_ENCRYPTION_KEY", None)
+    with pytest.raises(SecretManagerNotConfigured):
+        secret_manager_enabled()
+    with pytest.raises(SecretManagerNotConfigured):
+        get_secret_manager()
+
+
+def test_config_rejects_unknown_backend_at_construction():
+    """Boot-time guard: an invalid SECRET_MANAGER_BACKEND env value is rejected
+    when Settings is constructed, not tolerated until first vault use."""
+    from pydantic import ValidationError
+    from app.core.config import Settings
+    with pytest.raises(ValidationError):
+        Settings(SECRET_MANAGER_BACKEND="bogus")

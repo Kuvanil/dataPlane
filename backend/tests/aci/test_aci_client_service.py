@@ -41,6 +41,24 @@ def test_unconfigured_raises_clear_error(monkeypatch):
         svc.search_tools("anything")
 
 
+def test_unconfigured_calls_do_not_pollute_breaker(monkeypatch):
+    """Regression (v4 bugs2 #1): an unset ACI_API_KEY is a configuration
+    state, not an outage. Repeated unconfigured calls must keep raising the
+    clear AciNotConfigured error and leave the breaker CLOSED — never flip to
+    a misleading CircuitBreakerOpen, and never pre-trip the breaker before ACI
+    is configured."""
+    from app.core.circuit_breaker import State
+    from app.core.config import settings
+    from app.services import aci_client_service
+
+    monkeypatch.setattr(settings, "ACI_API_KEY", None)
+    svc = AciClientService()  # fresh instance, no cached client
+    for _ in range(6):  # well past the test breaker's threshold of 3
+        with pytest.raises(AciNotConfigured):
+            svc.search_tools("anything")
+    assert aci_client_service.aci_circuit.state == State.CLOSED
+
+
 def test_retry_then_succeed_on_transient_failure(fake_aci, no_sleep, monkeypatch):
     calls = {"n": 0}
     real_search = fake_aci.functions.search

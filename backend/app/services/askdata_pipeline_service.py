@@ -125,15 +125,38 @@ def _dispatch_plan_generation(plan_id: int) -> None:
 
 import re as _re
 
-_CHANNEL_RE = _re.compile(r"#[\w-]+")
+# A Slack channel reference must start with a letter — bare "#500" is an
+# issue/PR number, not a channel, and must not be mistaken for one.
+_CHANNEL_RE = _re.compile(r"#[A-Za-z][\w-]*")
 _EMAIL_RE = _re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
-_TICKET_RE = _re.compile(r"\b(ticket|issue|jira|linear|github|pull\s+request|pr)\b",
-                         _re.IGNORECASE)
+_TICKET_NOUN_RE = _re.compile(
+    r"\b(ticket|issue|jira|linear|github|pull\s+request|pr|bug)\b", _re.IGNORECASE)
+_TICKET_VERB_RE = _re.compile(r"\b(open|file|raise|create|log|submit)\b", _re.IGNORECASE)
+
+
+def _is_ticket_request(question: str) -> bool:
+    """A ticket request needs both a ticketing noun AND a creation verb
+    ("open a jira ticket", "file a github issue"). This keeps an incidental
+    ticketing word ("email bob@x.com about the issue") from being routed as a
+    ticket, while making an explicit ticket request win over a cc'd email
+    address or an issue number that also appears in the text."""
+    return bool(_TICKET_NOUN_RE.search(question) and _TICKET_VERB_RE.search(question))
 
 
 def _resolve_external_target(question: str) -> Optional[Dict[str, Any]]:
     """Map a request to a governed action type + payload, or None when the
-    target isn't resolvable (→ clarifying question, never a guess)."""
+    target isn't resolvable (→ clarifying question, never a guess).
+
+    Precedence: an explicit ticket request first (so "open a jira ticket …
+    cc bob@corp.com" or "open a github issue for bug #500" route to a ticket,
+    not to email/a #500 channel), then an email address, then a #channel, then
+    a weak ticketing-word fallback."""
+    if _is_ticket_request(question):
+        return {
+            "action_type": "external_ticket_create",
+            "payload": {"title": question[:80], "body": question},
+            "subject": f"ticket:{question[:60]}",
+        }
     email = _EMAIL_RE.search(question)
     if email:
         return {
@@ -149,7 +172,7 @@ def _resolve_external_target(question: str) -> Optional[Dict[str, Any]]:
             "payload": {"destination": channel.group(0), "body": question},
             "subject": f"channel:{channel.group(0)}",
         }
-    if _TICKET_RE.search(question):
+    if _TICKET_NOUN_RE.search(question):
         return {
             "action_type": "external_ticket_create",
             "payload": {"title": question[:80], "body": question},

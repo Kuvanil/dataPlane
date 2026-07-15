@@ -62,7 +62,18 @@ def approve_and_execute_plan(db: Session, plan_id: int, *,
                              actor: str, role: str) -> SchemaDesignPlan:
     """Approve + apply a ready plan. Same role bar as Query Studio's own
     write gate (admin) — no weaker parallel permission check (task #7)."""
-    plan = _get_plan_or_404(db, plan_id)
+    # Lock the plan row for the duration of the status transition so two
+    # concurrent admin approvals can't both pass the `status == ready` check
+    # and double-apply the plan's DDL. (Harmless no-op on SQLite, enforced on
+    # Postgres.)
+    plan = (
+        db.query(SchemaDesignPlan)
+        .filter(SchemaDesignPlan.id == plan_id)
+        .with_for_update()
+        .first()
+    )
+    if plan is None:
+        raise HTTPException(status_code=404, detail="Plan not found")
     if role != "admin":
         raise HTTPException(status_code=403,
                             detail="applying a schema-design plan requires the admin role")

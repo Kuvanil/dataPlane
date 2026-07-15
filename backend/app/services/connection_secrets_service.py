@@ -15,6 +15,7 @@ refs, and connection ids only.
 from __future__ import annotations
 
 import logging
+import threading
 from typing import Any, Dict, List, Optional, Tuple
 
 from cachetools import TTLCache
@@ -33,6 +34,11 @@ logger = logging.getLogger(__name__)
 
 _AUDIT_TTL_SECONDS = 60
 _retrieve_audit_cache: TTLCache = TTLCache(maxsize=512, ttl=_AUDIT_TTL_SECONDS)
+# cachetools.TTLCache is NOT thread-safe; resolve_connection_config runs from
+# concurrent request threads and Celery workers, so every touch of the cache
+# is serialized under this lock. (The lock guards only the fast in-memory
+# check/set — the audit DB write happens outside it.)
+_retrieve_audit_lock = threading.Lock()
 
 _warned_disabled = False
 
@@ -97,10 +103,16 @@ def resolve_connection_config(connection: DBConnection) -> Dict[str, Any]:
 
 
 def _audit_retrieve_batched(connection: DBConnection) -> None:
-    if connection.id in _retrieve_audit_cache:
-        return
-    _retrieve_audit_cache[connection.id] = True
+    # The whole body is best-effort: auditing must NEVER break credential
+    # resolution, so both the (thread-unsafe) cache access and the DB write are
+    # inside the try. A concurrent-cache RuntimeError/KeyError here used to
+    # propagate out of resolve_connection_config and fail an otherwise-healthy
+    # connector build.
     try:
+        with _retrieve_audit_lock:
+            if connection.id in _retrieve_audit_cache:
+                return
+            _retrieve_audit_cache[connection.id] = True
         from app.core.database import SessionLocal
         db = SessionLocal()
         try:

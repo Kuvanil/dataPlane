@@ -92,13 +92,16 @@ class KeeperSecretsManagerBackend(SecretManager):
 
     def store(self, connection_id: int, secrets: Dict[str, Any],
               db: Optional[Session] = None) -> str:
+        # Resolve the client OUTSIDE the breaker: an unset KSM_CONFIG_PATH is a
+        # configuration state, not a Keeper outage, and must not count as a
+        # breaker failure.
+        client = self._get_client()
+
         def _do():
-            client = self._get_client()
-            uid = client.create_secret(
+            return client.create_secret(
                 folder_uid=settings.KSM_FOLDER_UID,
                 record_data=self._record_data(f"dataplane-connection-{connection_id}", secrets),
             )
-            return uid
 
         uid = self._call("store", _do)
         logger.info("[keeper] stage=store connection_id=%d record_uid=%s",
@@ -107,56 +110,48 @@ class KeeperSecretsManagerBackend(SecretManager):
 
     def retrieve(self, secrets_ref: str, db: Optional[Session] = None) -> Dict[str, Any]:
         uid = self._record_uid(secrets_ref)
-
-        def _do():
-            client = self._get_client()
-            records = client.get_secrets(uids=[uid])
-            if not records:
-                raise SecretManagerError(f"no keeper record for ref {secrets_ref}")
-            record = records[0]
-            out: Dict[str, Any] = {}
-            for field in (record.dict.get("custom") or []):
-                label = field.get("label") or field.get("type")
-                values = field.get("value") or []
-                if label and values:
-                    out[label] = values[0]
-            password = record.field("password", single=True)
-            if password:
-                out.setdefault("password", password)
-            return out
-
-        return self._call("retrieve", _do)
+        client = self._get_client()
+        # The network fetch is breaker-guarded; the "no record" decision is
+        # made AFTER it returns successfully. A missing/moved record is a
+        # benign logical error, not an outage — raising it inside the breaker
+        # (as before) let a few stale refs trip the circuit and take down
+        # credential resolution for every healthy record.
+        records = self._call("retrieve", lambda: client.get_secrets(uids=[uid]))
+        if not records:
+            raise SecretManagerError(f"no keeper record for ref {secrets_ref}")
+        record = records[0]
+        out: Dict[str, Any] = {}
+        for field in (record.dict.get("custom") or []):
+            label = field.get("label") or field.get("type")
+            values = field.get("value") or []
+            if label and values:
+                out[label] = values[0]
+        password = record.field("password", single=True)
+        if password:
+            out.setdefault("password", password)
+        return out
 
     def rotate(self, secrets_ref: str, new_secrets: Dict[str, Any],
                db: Optional[Session] = None) -> str:
         uid = self._record_uid(secrets_ref)
-
-        def _do():
-            client = self._get_client()
-            records = client.get_secrets(uids=[uid])
-            if not records:
-                raise SecretManagerError(f"no keeper record for ref {secrets_ref}")
-            record = records[0]
-            for key, value in new_secrets.items():
-                if key == "password":
-                    record.set_standard_field_value("password", value)
-                else:
-                    record.set_custom_field_value(key, value)
-            client.save(record)
-            return uid
-
-        self._call("rotate", _do)
+        client = self._get_client()
+        records = self._call("rotate_fetch", lambda: client.get_secrets(uids=[uid]))
+        if not records:
+            raise SecretManagerError(f"no keeper record for ref {secrets_ref}")
+        record = records[0]
+        for key, value in new_secrets.items():
+            if key == "password":
+                record.set_standard_field_value("password", value)
+            else:
+                record.set_custom_field_value(key, value)
+        self._call("rotate_save", lambda: client.save(record))
         logger.info("[keeper] stage=rotate record_uid=%s", uid)
         return secrets_ref  # record UID is stable across rotation
 
     def delete(self, secrets_ref: str, db: Optional[Session] = None) -> None:
         uid = self._record_uid(secrets_ref)
-
-        def _do():
-            client = self._get_client()
-            client.delete_secret(record_uids=[uid])
-
-        self._call("delete", _do)
+        client = self._get_client()
+        self._call("delete", lambda: client.delete_secret(record_uids=[uid]))
         logger.info("[keeper] stage=delete record_uid=%s", uid)
 
     @staticmethod

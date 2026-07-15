@@ -85,7 +85,7 @@ def linked_accounts(_user: User = Depends(get_current_user)) -> Dict[str, Any]:
 @router.get("/notification-settings")
 def get_notification_settings(
     db: Session = Depends(get_db),
-    _user: User = Depends(get_current_user),
+    _user: User = Depends(require_role("admin")),
 ) -> Dict[str, Any]:
     rows = notification_service.list_notification_settings(db)
     return {"settings": [

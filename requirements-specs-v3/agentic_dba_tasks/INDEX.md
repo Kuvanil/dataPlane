@@ -297,3 +297,14 @@ is a **second, differently-governed capability**, not loosening this one.
   issues. One session-discovered gotcha worth knowing: a live local Ollama makes plan-generation
   tests nondeterministic — `tests/agentic_dba/conftest.py` pins `AGENTIC_DBA_LLM_ENABLED=False`
   and the LLM path has its own mocked-boundary tests instead.
+- 2026-07-15 — **Second validation pass — 4 defects fixed, 1 documented; see `bugs2.md` +
+  `enhancements2.md`.** Fixed: (BUG-01) `uniqueness_ratio` divided the distinct-scan-capped
+  numerator by the full row count, so the UNIQUE/DEDUPE DQ rules silently never fired on tables
+  larger than the 100k scan cap — now divides by `min(row_count, scanned_rows)`; (BUG-02) LLM
+  column `type` bypassed grounding validation and flowed verbatim into DDL — now validated by
+  `_TYPE_RE`, ungrounded type rejects the whole adaptation; (BUG-03) schema-design requests
+  naming a SaaS as their data domain ("create target tables for our jira data") were misrouted to
+  the ACI approval queue — removed the `external_action` `+1` score bonus and made `schema_design`
+  win ties (priority 20 > 10); (BUG-04) concurrent double-approval could double-apply DDL — plan
+  row now `SELECT … FOR UPDATE`. Documented (not fixed): SQLite type-change collision object
+  reported `applied` though nothing executed. Regression tests added; backend `pytest` 811/811.

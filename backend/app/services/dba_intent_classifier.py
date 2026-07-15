@@ -116,7 +116,13 @@ def _match_external_action(text: str) -> Optional[Tuple[float, float, str]]:
     nouns = _EXTERNAL_NOUNS.findall(text)
     if not (verbs and nouns):
         return None
-    score = min(len(verbs), 1) + min(len(nouns), 2) + 1  # outranks build/read on ties
+    # Score on signal strength only. A prior `+1` bonus made external_action
+    # beat schema_design even when schema_design had the stronger signal, so
+    # "create target tables for our jira ticketing data" (a schema-design
+    # request that merely names a SaaS as its data domain) was misrouted to
+    # the ACI approval queue. Arbitration now: stronger raw signal wins; a
+    # genuine tie breaks to schema_design (see registration priorities below).
+    score = min(len(verbs), 1) + min(len(nouns), 2)
     confidence = min(1.0, 0.65 + 0.1 * (len(verbs) + len(nouns)))
     signal = (f"external verbs={sorted(set(v.lower() for v in verbs))} "
               f"targets={sorted(set(str(n).lower() for n in nouns if n))}")
@@ -142,18 +148,23 @@ def unregister_intent(name: str) -> None:
     _INTENT_REGISTRY.pop(name, None)
 
 
-# Built-ins. schema_design gets higher priority: when build and read signals
-# tie on score ("show me how to create a table"), the consequential-but-
-# gated path wins over a silently-wrong SELECT. external_action outranks
-# both — "open a github issue for this schema drift" contains build-ish and
-# read-ish words but is unambiguously an outbound action.
-register_intent(IntentSpec(
-    name="external_action", matcher=_match_external_action,
-    handler="aci_client_service", priority=20,
-))
+# Built-ins, by tie-break priority (higher wins on equal score):
+#   schema_design (20) > external_action (10) > read_query (0).
+# schema_design beats read_query on ties ("show me how to create a table") so
+# the consequential-but-gated path wins over a silently-wrong SELECT.
+# schema_design also beats external_action on ties: when a "create" request
+# names both a schema object AND an external tool ("create target tables for
+# our jira data"), the schema object is the intent and the tool is just the
+# data domain — a genuinely outbound request ("open a github issue…",
+# "post to #ops") uses a non-build verb, so external_action still wins it
+# outright on score, not on the tie-break.
 register_intent(IntentSpec(
     name="schema_design", matcher=_match_schema_design,
-    handler="agentic_dba_engine", priority=10,
+    handler="agentic_dba_engine", priority=20,
+))
+register_intent(IntentSpec(
+    name="external_action", matcher=_match_external_action,
+    handler="aci_client_service", priority=10,
 ))
 register_intent(IntentSpec(
     name="read_query", matcher=_match_read_query,

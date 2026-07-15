@@ -50,6 +50,16 @@ def test_non_external_requests_unaffected(question):
     assert classify_intent(question).intent != "external_action"
 
 
+@pytest.mark.parametrize("question", [
+    # Regression (v3 bugs2 #3): a schema-design request that merely names a
+    # SaaS as its data domain must NOT be misrouted to the ACI approval queue.
+    "create target tables for our jira ticketing data",
+    "design a star schema for our github issues warehouse",
+])
+def test_schema_design_naming_a_saas_domain_is_not_external(question):
+    assert classify_intent(question).intent == "schema_design"
+
+
 # ── Routing through the chat endpoint ────────────────────────────────────
 
 def test_external_action_never_reaches_nl2sql(client_analyst, sqlite_conn_scanned,
@@ -125,6 +135,34 @@ def test_unresolvable_target_asks_for_clarification(client_analyst, sqlite_conn_
     assert body["recommendation_id"] is None
     assert db.query(AutopilotRecommendation).count() == 0
     assert fake_aci_search.searched == []  # no discovery before a target exists
+
+
+# ── Target resolution precedence (v4 bugs2 #2) ───────────────────────────
+
+@pytest.mark.parametrize("question,expected", [
+    # An explicit ticket request wins over an incidental cc'd email address...
+    ("open a Jira ticket for the outage, cc bob@corp.com", "external_ticket_create"),
+    # ...and over an issue/PR number that would look like a #channel.
+    ("open a GitHub issue for bug #500", "external_ticket_create"),
+    # A bare email with no ticket phrasing still routes to email.
+    ("email the report to ops@example.com", "external_email_send"),
+    # An incidental ticketing word without a creation verb stays email.
+    ("email bob@x.com about the issue", "external_email_send"),
+    # A real #channel (letter-led) still routes to a message.
+    ("post the drift summary to #data-governance", "external_message_send"),
+])
+def test_external_target_resolution_precedence(question, expected):
+    from app.services.askdata_pipeline_service import _resolve_external_target
+    target = _resolve_external_target(question)
+    assert target is not None
+    assert target["action_type"] == expected
+
+
+def test_bare_issue_number_is_not_a_channel():
+    from app.services.askdata_pipeline_service import _resolve_external_target
+    # No ticket verb, no email, no letter-led channel — "#500" must not be
+    # mistaken for a Slack channel; there's simply no resolvable target.
+    assert _resolve_external_target("send an update about #500") is None
 
 
 def test_external_action_request_audited(client_analyst, sqlite_conn_scanned,

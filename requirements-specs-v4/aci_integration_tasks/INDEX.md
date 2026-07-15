@@ -218,3 +218,16 @@ does not introduce a second authorization model.
   issues. One session-discovered gotcha worth knowing: a live local Ollama makes plan-generation
   tests nondeterministic — `tests/agentic_dba/conftest.py` pins `AGENTIC_DBA_LLM_ENABLED=False`
   and the LLM path has its own mocked-boundary tests instead.
+- 2026-07-15 — **Second validation pass — 4 defects fixed, 1 documented; see `bugs2.md` +
+  `enhancements2.md`.** Fixed: (BUG-01) `AciNotConfigured` was counted as a circuit-breaker
+  failure, so after 5 unconfigured calls the clear "not configured" error degraded into a
+  misleading "circuit open" (and the shared breaker was polluted before ACI was ever configured) —
+  `_get_client()` now resolves outside the breaker; (BUG-02) external-action target resolution
+  mis-routed ticket requests containing a cc'd email or an issue number (`#500` treated as a Slack
+  channel) — explicit ticket requests (verb+noun) now take precedence and `_CHANNEL_RE` requires a
+  letter-led name; (BUG-03) GET `/integrations/notification-settings` was not admin-gated (contract
+  says GET+PUT) — now `require_role("admin")`; (BUG-04) `notify_out_task` could raise out of its
+  own `except` on a poisoned session — now rolls back before the failure audit. Documented (not
+  fixed): notify-out dispatched before the caller commits in `upsert_recommendation` (dangling
+  notification on rollback — needs the after-commit dispatch hook). Regression tests added; backend
+  `pytest` 811/811.

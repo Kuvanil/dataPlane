@@ -221,3 +221,14 @@ invent a new governance/approval pattern.
   rotation to fail closed when the existing vault record cannot be read, preventing a vault
   outage/lost key from erasing unsubmitted credential fields; added a regression test. Targeted
   v5 suite: 41/41. Open follow-ups are recorded in `enhancements.md`.
+- 2026-07-15 — **Second validation pass — 3 further defects fixed; see `bugs2.md` +
+  `enhancements2.md` (BUG numbering continues: BUG-03..05).** No plaintext leak found (posture
+  holds). Fixed: (BUG-03) the retrieve-audit `TTLCache` is not thread-safe and was touched outside
+  the try/except, so a concurrent-access race could break credential resolution on the *default*
+  aes256 backend — added a lock and moved the whole audit body inside the try; (BUG-04) the keeper
+  adapter tripped its outage breaker on a benign "record not found" (and "not configured"), so a
+  few stale refs could open the circuit and fail healthy reads for 30s — `_get_client()` and the
+  not-found check now sit outside the breaker, only real network failures count; (BUG-05) an
+  unknown `SECRET_MANAGER_BACKEND` (typo) silently degraded to legacy plaintext storage — added a
+  boot-time `field_validator` and made `secret_manager_enabled()` raise for unknown backends.
+  Regression tests added; backend `pytest` 811/811.

@@ -47,10 +47,12 @@ def notify_out_task(*, event_key: str, title: str, body: str = "",
             return {"status": "sent", "event_key": event_key}
         except CircuitBreakerOpen as exc:
             # ACI outage: fail fast, no retry storm — audit and stop.
+            db.rollback()  # clear any half-applied/poisoned session state first
             _audit_failure(db, emit_audit_event, event_key, title, link, str(exc))
             db.commit()
             return {"status": "failed", "reason": "circuit_open"}
         except Exception as exc:
+            db.rollback()  # clear any half-applied/poisoned session state first
             _audit_failure(db, emit_audit_event, event_key, title, link, str(exc))
             db.commit()
             return {"status": "failed", "reason": str(exc)}

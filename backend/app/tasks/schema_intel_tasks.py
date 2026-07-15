@@ -64,7 +64,9 @@ def profile_column_task(self, connection_id: int, table_name: str,
             # Enrichment (agentic_dba_tasks #2): consumes the in-memory
             # sample while the connector is still open; persists aggregates
             # + candidate metadata only, never sampled values.
-            uniqueness_ratio = compute_uniqueness_ratio(result.distinct_count, result.row_count)
+            uniqueness_ratio = compute_uniqueness_ratio(
+                result.distinct_count, result.row_count,
+                scanned_rows=settings.SCHEMA_INTEL_MAX_DISTINCT_SCAN_ROWS)
             duplicate_count = count_duplicate_values(result.sample_values)
             fk_candidates = infer_fk_candidates(
                 db, connection_id, connector, table_name, column_name,

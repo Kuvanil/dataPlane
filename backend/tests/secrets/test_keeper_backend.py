@@ -146,6 +146,23 @@ def test_circuit_opens_on_repeated_failures_and_fails_fast(keeper_backend):
         backend.retrieve("keeper://rec-1")
 
 
+def test_missing_record_does_not_trip_breaker(keeper_backend):
+    """Regression (v5 bugs2 #2): a benign "record not found" is a logical
+    error, not a Keeper outage — it must not count toward the breaker
+    threshold, so a few stale refs can't take down healthy credential reads."""
+    from app.core.circuit_breaker import State
+    from app.services import keeper_secrets_manager_backend as ksm_module
+
+    backend, fake = keeper_backend
+    for _ in range(6):  # well past the test breaker's threshold of 3
+        with pytest.raises(SecretManagerError):
+            backend.retrieve("keeper://ghost")
+    assert ksm_module.keeper_circuit.state == State.CLOSED
+    # A real record still resolves — the circuit was never opened.
+    ref = backend.store(1, {"password": SECRET_VALUE})
+    assert backend.retrieve(ref)["password"] == SECRET_VALUE
+
+
 def test_failure_messages_never_contain_secret_values(keeper_backend):
     backend, fake = keeper_backend
     ref = backend.store(1, {"password": SECRET_VALUE})

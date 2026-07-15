@@ -91,9 +91,14 @@ class AciClientService:
         """ACI meta-function tool discovery — dynamic, not a hand-maintained
         static list of 600+ schemas (FR2)."""
         logger.info("[aci] op=search_tools query=%r", query[:120])
+        # Resolve the client OUTSIDE the breaker: an unset ACI_API_KEY is a
+        # configuration state, not a service outage, so AciNotConfigured must
+        # not count as a breaker failure (that would flip the clear
+        # "not configured" error into a misleading "circuit open" after a few
+        # calls, and pollute the breaker before ACI is ever configured).
+        client = self._get_client()
 
         def _do():
-            client = self._get_client()
             results = client.functions.search(intent=query, limit=limit)
             return [r if isinstance(r, dict) else getattr(r, "__dict__", {"name": str(r)})
                     for r in results]
@@ -105,9 +110,9 @@ class AciClientService:
         """Execute one external tool call through ACI."""
         owner = linked_account_owner_id or settings.ACI_LINKED_ACCOUNT_OWNER_ID
         logger.info("[aci] op=execute_tool tool=%s owner=%s", tool_name, owner)
+        client = self._get_client()  # config check outside the breaker (see search_tools)
 
         def _do():
-            client = self._get_client()
             result = client.functions.execute(
                 function_name=tool_name,
                 function_arguments=params,
@@ -124,9 +129,9 @@ class AciClientService:
     def list_linked_accounts(self) -> List[Dict[str, Any]]:
         """Linked external accounts — for the integrations frontend surface."""
         logger.info("[aci] op=list_linked_accounts")
+        client = self._get_client()  # config check outside the breaker (see search_tools)
 
         def _do():
-            client = self._get_client()
             accounts = client.linked_accounts.list()
             out: List[Dict[str, Any]] = []
             for a in accounts:

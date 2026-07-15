@@ -25,11 +25,25 @@ logger = logging.getLogger(__name__)
 
 
 def compute_uniqueness_ratio(distinct_count: Optional[int],
-                             row_count: Optional[int]) -> Optional[float]:
-    """distinct_count / row_count, or None when either input is unavailable."""
+                             row_count: Optional[int],
+                             scanned_rows: Optional[int] = None) -> Optional[float]:
+    """Fraction of the profiled population that is distinct.
+
+    `distinct_count` is computed over the first `scanned_rows` rows (the
+    connector bounds the DISTINCT scan by a limit), while `row_count` is the
+    full table size. Dividing by the full `row_count` would understate
+    uniqueness on any table larger than the scan limit — a genuinely-unique
+    key column on a 1M-row table with a 100k scan cap would read as 0.1,
+    silently disabling the unique/dedupe DQ rules on exactly the large tables
+    they matter for. So the denominator is the size of the population the
+    distinct count was actually measured over: min(row_count, scanned_rows).
+    """
     if distinct_count is None or not row_count or row_count <= 0:
         return None
-    return round(min(1.0, distinct_count / row_count), 4)
+    denominator = row_count
+    if scanned_rows is not None and scanned_rows > 0:
+        denominator = min(row_count, scanned_rows)
+    return round(min(1.0, distinct_count / denominator), 4)
 
 
 def count_duplicate_values(sample_values: List[Any]) -> int:
