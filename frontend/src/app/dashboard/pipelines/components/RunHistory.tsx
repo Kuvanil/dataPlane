@@ -22,9 +22,9 @@ export default function RunHistory({ runs, total, hasMore, loading, role, onFilt
   const [trigger, setTrigger] = useState<RunTrigger | "">("");
 
   return (
-    <div className="border border-zinc-800 rounded-lg bg-zinc-900/40 overflow-hidden">
-      <div className="p-3 border-b border-zinc-800 flex items-center justify-between gap-3">
-        <h4 className="text-sm font-semibold text-zinc-200">Run history{total > 0 ? ` · ${total}` : ""}</h4>
+    <div className="border border-border rounded-lg bg-surface-elevated overflow-hidden">
+      <div className="p-3 border-b border-border flex items-center justify-between gap-3">
+        <h4 className="text-sm font-semibold text-fg-muted">Run history{total > 0 ? ` · ${total}` : ""}</h4>
         <div className="flex gap-2">
           <select
             value={status}
@@ -32,7 +32,7 @@ export default function RunHistory({ runs, total, hasMore, loading, role, onFilt
               setStatus(e.target.value);
               onFilterChange({ status: e.target.value || undefined, trigger: trigger || undefined });
             }}
-            className="px-2 py-1 text-[11px] rounded bg-zinc-800 border border-zinc-700 text-zinc-300"
+            className="px-2 py-1 text-[11px] rounded bg-surface-overlay border border-border-strong text-fg-muted"
           >
             {STATUS_OPTIONS.map((s) => <option key={s} value={s}>{s || "all statuses"}</option>)}
           </select>
@@ -43,7 +43,7 @@ export default function RunHistory({ runs, total, hasMore, loading, role, onFilt
               setTrigger(v);
               onFilterChange({ status: status || undefined, trigger: v || undefined });
             }}
-            className="px-2 py-1 text-[11px] rounded bg-zinc-800 border border-zinc-700 text-zinc-300"
+            className="px-2 py-1 text-[11px] rounded bg-surface-overlay border border-border-strong text-fg-muted"
           >
             {TRIGGER_OPTIONS.map((t) => <option key={t} value={t}>{t || "all triggers"}</option>)}
           </select>
@@ -51,13 +51,13 @@ export default function RunHistory({ runs, total, hasMore, loading, role, onFilt
       </div>
 
       {loading ? (
-        <div className="p-4 text-xs text-zinc-500">Loading…</div>
+        <div className="p-4 text-xs text-fg0">Loading…</div>
       ) : runs.length === 0 ? (
-        <div className="p-4 text-xs text-zinc-500">No runs yet.</div>
+        <div className="p-4 text-xs text-fg0">No runs yet.</div>
       ) : (
         <table className="w-full text-xs">
           <thead>
-            <tr className="text-[10px] uppercase text-zinc-500 border-b border-zinc-800">
+            <tr className="text-[10px] uppercase text-fg0 border-b border-border">
               <th className="text-left px-3 py-2">Run</th>
               <th className="text-left px-3 py-2">Status</th>
               <th className="text-left px-3 py-2">Trigger</th>
@@ -69,19 +69,19 @@ export default function RunHistory({ runs, total, hasMore, loading, role, onFilt
           </thead>
           <tbody>
             {runs.map((run) => (
-              <tr key={run.id} className="border-b border-zinc-800/60 hover:bg-zinc-800/30">
-                <td className="px-3 py-2 text-zinc-300">
-                  #{run.id}{run.parent_run_id ? <span className="text-zinc-500"> ← #{run.parent_run_id}</span> : null}
+              <tr key={run.id} className="border-b border-border/60 hover:bg-surface-overlay">
+                <td className="px-3 py-2 text-fg-muted">
+                  #{run.id}{run.parent_run_id ? <span className="text-fg0"> ← #{run.parent_run_id}</span> : null}
                 </td>
                 <td className="px-3 py-2">
                   <span className={classNames("px-1.5 py-0.5 rounded text-[10px] font-bold uppercase border", statusColor(run.status))}>
                     {run.status}
                   </span>
                 </td>
-                <td className="px-3 py-2 text-zinc-400">{run.trigger}</td>
-                <td className="px-3 py-2 text-zinc-400">{formatTimestamp(run.started_at)}</td>
-                <td className="px-3 py-2 text-zinc-400">{formatDuration(run.started_at, run.finished_at)}</td>
-                <td className="px-3 py-2 text-zinc-400">{run.rows_processed}</td>
+                <td className="px-3 py-2 text-fg-subtle">{run.trigger}</td>
+                <td className="px-3 py-2 text-fg-subtle">{formatTimestamp(run.started_at)}</td>
+                <td className="px-3 py-2 text-fg-subtle">{formatDuration(run.started_at, run.finished_at)}</td>
+                <td className="px-3 py-2 text-fg-subtle">{run.rows_processed}</td>
                 <td className="px-3 py-2 text-right">
                   {canRerun && ["succeeded", "failed"].includes(run.status) && (
                     <button
@@ -99,7 +99,7 @@ export default function RunHistory({ runs, total, hasMore, loading, role, onFilt
         </table>
       )}
       {hasMore && !loading && (
-        <div className="px-3 py-2 text-[11px] text-zinc-500 border-t border-zinc-800">
+        <div className="px-3 py-2 text-[11px] text-fg0 border-t border-border">
           Showing {runs.length} of {total}. Narrow the filters to see more specific runs.
         </div>
       )}

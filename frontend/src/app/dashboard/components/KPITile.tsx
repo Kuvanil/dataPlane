@@ -35,11 +35,11 @@ export function KPITile({ tile, isLoading = false }: KPITileProps) {
     return (
       <div
         aria-hidden="true"
-        className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800 backdrop-blur-sm flex flex-col gap-3"
+        className="p-5 rounded-2xl bg-surface-elevated border border-border backdrop-blur-sm flex flex-col gap-3"
       >
-        <div className="h-4 w-2/3 rounded bg-zinc-800 animate-pulse" />
-        <div className="h-8 w-1/3 rounded bg-zinc-800 animate-pulse" />
-        <div className="h-3 w-1/2 rounded bg-zinc-800 animate-pulse" />
+        <div className="h-4 w-2/3 rounded bg-surface-overlay animate-pulse" />
+        <div className="h-8 w-1/3 rounded bg-surface-overlay animate-pulse" />
+        <div className="h-3 w-1/2 rounded bg-surface-overlay animate-pulse" />
       </div>
     );
   }
@@ -47,14 +47,14 @@ export function KPITile({ tile, isLoading = false }: KPITileProps) {
   if (tile.status !== "loaded") {
     return (
       <div
-        className="p-5 rounded-2xl bg-zinc-900/50 border border-red-500/20 backdrop-blur-sm flex flex-col gap-2"
+        className="p-5 rounded-2xl bg-surface-elevated border border-red-500/20 backdrop-blur-sm flex flex-col gap-2"
         title={tile.error_message ?? undefined}
       >
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-zinc-400 truncate">{tile.label}</span>
+          <span className="text-sm font-medium text-fg-subtle truncate">{tile.label}</span>
           {tile.icon && <span className="text-xl">{tile.icon}</span>}
         </div>
-        <div className="text-3xl font-bold text-zinc-600">—</div>
+        <div className="text-3xl font-bold text-fg-subtle">—</div>
         <div className="text-xs text-red-400/80 truncate">
           {tile.status === "unavailable"
             ? tile.error_message || "Not available"
@@ -65,15 +65,15 @@ export function KPITile({ tile, isLoading = false }: KPITileProps) {
   }
 
   const showTrend = tile.trend && tile.trend !== "neutral" && tile.value > 0;
-  const color = MODULE_COLORS[tile.module] ?? "text-zinc-200";
+  const color = MODULE_COLORS[tile.module] ?? "text-fg-muted";
 
   return (
     <Link
       href={tile.link_url}
-      className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800 backdrop-blur-sm flex flex-col gap-2 hover:border-zinc-600 transition-colors group"
+      className="p-5 rounded-2xl bg-surface-elevated border border-border backdrop-blur-sm flex flex-col gap-2 hover:border-border-strong transition-colors group"
     >
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-zinc-400 truncate">{tile.label}</span>
+        <span className="text-sm font-medium text-fg-subtle truncate">{tile.label}</span>
         {tile.icon && (
           <span className="text-xl group-hover:scale-110 transition-transform" role="img" aria-hidden="true">
             {tile.icon}
@@ -81,7 +81,7 @@ export function KPITile({ tile, isLoading = false }: KPITileProps) {
         )}
       </div>
       <div className={`text-3xl font-bold ${color}`}>{formatKPIValue(tile.value)}</div>
-      <div className="flex items-center gap-2 text-xs text-zinc-500 min-h-4">
+      <div className="flex items-center gap-2 text-xs text-fg0 min-h-4">
         {showTrend && (
           <span className={tile.trend === "up" ? "text-red-400" : "text-emerald-400"}>
             {tile.trend === "up" ? "↑" : "↓"}

@@ -18,9 +18,16 @@ logger = logging.getLogger(__name__)
 def get_connector(connection: DBConnection):
     """
     Factory function to initialize correct connector based on DBConnection model.
+
+    Credentials are resolved through the SecretManager when the connection
+    has a secrets_ref (keeperdb_integration_tasks #4) — a vault outage fails
+    HERE with a clear error, so only credential-dependent operations break;
+    metadata reads never pass through this function.
     """
+    from app.services.connection_secrets_service import resolve_connection_config
+
     conn_type = connection.type.lower()
-    config = connection.config
+    config = resolve_connection_config(connection)
 
     if conn_type == "sqlite":
         if "path" not in config:

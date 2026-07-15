@@ -42,16 +42,16 @@ export default function DeleteConnectorDialog({ connector, onClose, onDeleted }:
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
-      <div className="w-full max-w-md p-6 rounded-2xl bg-zinc-900 border border-zinc-800 flex flex-col gap-4 shadow-2xl">
-        <h3 className="text-lg font-semibold text-zinc-200">Delete Connector</h3>
-        <p className="text-sm text-zinc-400">
-          Are you sure you want to delete <span className="font-semibold text-zinc-200">{connector.name}</span>?
+      <div className="w-full max-w-md p-6 rounded-2xl bg-surface border border-border flex flex-col gap-4 shadow-2xl">
+        <h3 className="text-lg font-semibold text-fg-muted">Delete Connector</h3>
+        <p className="text-sm text-fg-subtle">
+          Are you sure you want to delete <span className="font-semibold text-fg-muted">{connector.name}</span>?
           This action will soft-delete the connector.
         </p>
 
         {checking ? (
-          <div className="flex items-center gap-2 text-xs text-zinc-500">
-            <span className="w-3 h-3 border border-zinc-500 border-t-transparent rounded-full animate-spin" />
+          <div className="flex items-center gap-2 text-xs text-fg0">
+            <span className="w-3 h-3 border border-border-strong border-t-transparent rounded-full animate-spin" />
             Checking dependencies...
           </div>
         ) : hasDeps ? (
@@ -61,7 +61,7 @@ export default function DeleteConnectorDialog({ connector, onClose, onDeleted }:
             </p>
             {dependencies!.mappings.length > 0 && (
               <div className="mb-2">
-                <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Mappings</span>
+                <span className="text-[10px] text-fg0 uppercase tracking-wider">Mappings</span>
                 <ul className="mt-1 flex flex-col gap-1">
                   {dependencies!.mappings.slice(0, 5).map(m => (
                     <li key={m.id}>
@@ -71,14 +71,14 @@ export default function DeleteConnectorDialog({ connector, onClose, onDeleted }:
                     </li>
                   ))}
                   {dependencies!.mappings.length > 5 && (
-                    <li className="text-[10px] text-zinc-500">+{dependencies!.mappings.length - 5} more</li>
+                    <li className="text-[10px] text-fg0">+{dependencies!.mappings.length - 5} more</li>
                   )}
                 </ul>
               </div>
             )}
             {dependencies!.pipelines.length > 0 && (
               <div>
-                <span className="text-[10px] text-zinc-500 uppercase tracking-wider">Pipelines</span>
+                <span className="text-[10px] text-fg0 uppercase tracking-wider">Pipelines</span>
                 <ul className="mt-1 flex flex-col gap-1">
                   {dependencies!.pipelines.slice(0, 5).map(p => (
                     <li key={p.id}>
@@ -88,7 +88,7 @@ export default function DeleteConnectorDialog({ connector, onClose, onDeleted }:
                     </li>
                   ))}
                   {dependencies!.pipelines.length > 5 && (
-                    <li className="text-[10px] text-zinc-500">+{dependencies!.pipelines.length - 5} more</li>
+                    <li className="text-[10px] text-fg0">+{dependencies!.pipelines.length - 5} more</li>
                   )}
                 </ul>
               </div>
@@ -108,7 +108,7 @@ export default function DeleteConnectorDialog({ connector, onClose, onDeleted }:
           <button
             onClick={onClose}
             disabled={deleting}
-            className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-semibold text-zinc-400 disabled:opacity-50"
+            className="flex-1 py-2 bg-surface-overlay hover:bg-surface-overlay rounded-xl text-sm font-semibold text-fg-subtle disabled:opacity-50"
           >
             Cancel
           </button>

@@ -144,9 +144,9 @@ export default function RunConsole({ onQueuedForApproval }: RunConsoleProps) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Console log area */}
-      <div className="lg:col-span-2 flex flex-col gap-4 rounded-2xl bg-zinc-900 border border-zinc-800 p-6 backdrop-blur-sm">
-        <div className="flex justify-between items-center border-b border-zinc-800 pb-4">
-          <h3 className="font-semibold text-zinc-200">AI Execution Console</h3>
+      <div className="lg:col-span-2 flex flex-col gap-4 rounded-2xl bg-surface border border-border p-6 backdrop-blur-sm">
+        <div className="flex justify-between items-center border-b border-border pb-4">
+          <h3 className="font-semibold text-fg-muted">AI Execution Console</h3>
           {running ? (
             <span className="flex items-center gap-1.5 text-xs text-blue-400 bg-blue-500/10 px-3 py-1 rounded-full border border-blue-500/20 animate-pulse">
               <span className="w-1.5 h-1.5 bg-blue-400 rounded-full" /> Running
@@ -160,27 +160,27 @@ export default function RunConsole({ onQueuedForApproval }: RunConsoleProps) {
               ❌ Failed
             </span>
           ) : (
-            <span className="flex items-center gap-1.5 text-xs text-zinc-500 bg-zinc-800 px-3 py-1 rounded-full border border-zinc-700">
+            <span className="flex items-center gap-1.5 text-xs text-fg0 bg-surface-overlay px-3 py-1 rounded-full border border-border-strong">
               Idle
             </span>
           )}
         </div>
         <div
           ref={consoleRef}
-          className="flex-1 font-mono text-xs text-zinc-400 bg-zinc-950 p-4 rounded-xl border border-zinc-800 overflow-y-auto max-h-[420px] flex flex-col gap-1.5"
+          className="flex-1 font-mono text-xs text-fg-subtle bg-background p-4 rounded-xl border border-border overflow-y-auto max-h-[420px] flex flex-col gap-1.5"
         >
           {logs.length === 0 ? (
-            <div className="text-zinc-600 italic">
+            <div className="text-fg-subtle italic">
               {running ? "Waiting for agent output..." : "Select source and target, then click Run Autopilot."}
             </div>
           ) : (
             logs.map((lg, i) => (
               <div
                 key={i}
-                className={`flex gap-2 ${lg.level === "error" ? "text-red-400" : lg.level === "warning" ? "text-amber-400" : "text-zinc-300"}`}
+                className={`flex gap-2 ${lg.level === "error" ? "text-red-400" : lg.level === "warning" ? "text-amber-400" : "text-fg-muted"}`}
               >
                 <span className="shrink-0">{STEP_ICONS[lg.step] ?? "•"}</span>
-                <span className="text-zinc-500 shrink-0">[{new Date(lg.created_at).toLocaleTimeString()}]</span>
+                <span className="text-fg0 shrink-0">[{new Date(lg.created_at).toLocaleTimeString()}]</span>
                 <span>{lg.message}</span>
               </div>
             ))
@@ -189,19 +189,19 @@ export default function RunConsole({ onQueuedForApproval }: RunConsoleProps) {
       </div>
 
       {/* Control Panel */}
-      <div className="flex flex-col gap-4 rounded-2xl bg-zinc-900 border border-zinc-800 p-6 backdrop-blur-sm justify-between">
+      <div className="flex flex-col gap-4 rounded-2xl bg-surface border border-border p-6 backdrop-blur-sm justify-between">
         <div>
-          <h3 className="font-semibold text-zinc-200 mb-2">Autopilot Panel</h3>
-          <p className="text-xs text-zinc-400 leading-relaxed mb-4">
+          <h3 className="font-semibold text-fg-muted mb-2">Autopilot Panel</h3>
+          <p className="text-xs text-fg-subtle leading-relaxed mb-4">
             AI autonomously matches schemas, detects PII, and generates migration SQL.
           </p>
           <div className="flex flex-col gap-3">
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-zinc-500">Source Database</label>
+              <label className="text-xs text-fg0">Source Database</label>
               <select
                 value={sourceId}
                 onChange={(e) => setSourceId(e.target.value)}
-                className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2"
+                className="bg-surface-overlay border border-border-strong text-fg-muted text-sm rounded-lg px-3 py-2"
                 disabled={running}
               >
                 <option value="">— Select source —</option>
@@ -211,11 +211,11 @@ export default function RunConsole({ onQueuedForApproval }: RunConsoleProps) {
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-zinc-500">Target Database</label>
+              <label className="text-xs text-fg0">Target Database</label>
               <select
                 value={targetId}
                 onChange={(e) => setTargetId(e.target.value)}
-                className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2"
+                className="bg-surface-overlay border border-border-strong text-fg-muted text-sm rounded-lg px-3 py-2"
                 disabled={running}
               >
                 <option value="">— Select target —</option>
@@ -225,11 +225,11 @@ export default function RunConsole({ onQueuedForApproval }: RunConsoleProps) {
               </select>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-xs text-zinc-500">Mode</label>
+              <label className="text-xs text-fg0">Mode</label>
               <select
                 value={mode}
                 onChange={(e) => setMode(e.target.value as "suggest" | "execute")}
-                className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-sm rounded-lg px-3 py-2"
+                className="bg-surface-overlay border border-border-strong text-fg-muted text-sm rounded-lg px-3 py-2"
                 disabled={running}
               >
                 <option value="suggest">Suggest Only</option>
@@ -242,14 +242,14 @@ export default function RunConsole({ onQueuedForApproval }: RunConsoleProps) {
                 </p>
               )}
             </div>
-            <div className="p-3 rounded-xl bg-zinc-800/50 border border-zinc-800 flex flex-col">
-              <span className="text-xs text-zinc-500">Selected Model</span>
-              <span className="text-sm font-semibold text-zinc-300">Llama3 (Ollama)</span>
+            <div className="p-3 rounded-xl bg-surface-overlay border border-border flex flex-col">
+              <span className="text-xs text-fg0">Selected Model</span>
+              <span className="text-sm font-semibold text-fg-muted">Llama3 (Ollama)</span>
             </div>
             {sourceName && targetName && (
-              <div className="p-3 rounded-xl bg-zinc-800/50 border border-zinc-800 flex flex-col">
-                <span className="text-xs text-zinc-500">Target Action</span>
-                <span className="text-sm font-semibold text-zinc-300">{sourceName} → {targetName}</span>
+              <div className="p-3 rounded-xl bg-surface-overlay border border-border flex flex-col">
+                <span className="text-xs text-fg0">Target Action</span>
+                <span className="text-sm font-semibold text-fg-muted">{sourceName} → {targetName}</span>
               </div>
             )}
           </div>
@@ -270,13 +270,13 @@ export default function RunConsole({ onQueuedForApproval }: RunConsoleProps) {
           {running && (
             <button
               onClick={handleStop}
-              className="w-full py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-semibold text-zinc-400 transition-all border border-transparent hover:border-zinc-600"
+              className="w-full py-2 bg-surface-overlay hover:bg-surface-overlay rounded-xl text-sm font-semibold text-fg-subtle transition-all border border-transparent hover:border-border-strong"
             >
               Stop
             </button>
           )}
           {runId && !running && (
-            <div className="text-xs text-zinc-600 text-center font-mono">run: {runId.slice(0, 8)}…</div>
+            <div className="text-xs text-fg-subtle text-center font-mono">run: {runId.slice(0, 8)}…</div>
           )}
         </div>
       </div>

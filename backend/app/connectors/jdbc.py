@@ -153,5 +153,6 @@ class JDBCConnector(BaseConnector):
             distinct_count=distinct_count,
             min_value=str(min_val) if min_val is not None else None,
             max_value=str(max_val) if max_val is not None else None,
-            sample_values=sample, sample_size_used=len(sample), error=error,
+            sample_values=sample, sample_size_used=len(sample),
+            row_count=total, error=error,
         )

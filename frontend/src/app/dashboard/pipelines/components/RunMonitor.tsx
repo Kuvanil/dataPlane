@@ -11,7 +11,7 @@ interface RunMonitorProps {
 export default function RunMonitor({ run }: RunMonitorProps) {
   if (!run) {
     return (
-      <div className="border border-zinc-800 rounded-lg p-4 bg-zinc-900/40 text-xs text-zinc-500">
+      <div className="border border-border rounded-lg p-4 bg-surface-elevated text-xs text-fg0">
         No run in progress. Trigger a run to see live status here.
       </div>
     );
@@ -20,9 +20,9 @@ export default function RunMonitor({ run }: RunMonitorProps) {
   const stepsByName = new Map(run.steps.map((s) => [s.step, s]));
 
   return (
-    <div className="border border-zinc-800 rounded-lg p-4 bg-zinc-900/40">
+    <div className="border border-border rounded-lg p-4 bg-surface-elevated">
       <div className="flex items-center justify-between mb-3">
-        <h4 className="text-sm font-semibold text-zinc-200">Run #{run.id}</h4>
+        <h4 className="text-sm font-semibold text-fg-muted">Run #{run.id}</h4>
         <span className={classNames("px-2 py-0.5 rounded text-[10px] font-bold uppercase border", statusColor(run.status))}>
           {run.status}
         </span>
@@ -36,7 +36,7 @@ export default function RunMonitor({ run }: RunMonitorProps) {
               <div
                 className={classNames(
                   "flex-1 rounded-lg border px-3 py-2 text-center",
-                  step ? statusColor(step.status) : "bg-zinc-800 text-zinc-500 border-zinc-700",
+                  step ? statusColor(step.status) : "bg-surface-overlay text-fg0 border-border-strong",
                 )}
               >
                 <div className="text-[10px] uppercase font-bold">{stepName}</div>
@@ -45,24 +45,24 @@ export default function RunMonitor({ run }: RunMonitorProps) {
                   {step && step.rows_processed > 0 ? ` · ${step.rows_processed} rows` : ""}
                 </div>
               </div>
-              {idx < STEP_ORDER.length - 1 && <span className="text-zinc-600">→</span>}
+              {idx < STEP_ORDER.length - 1 && <span className="text-fg-subtle">→</span>}
             </div>
           );
         })}
       </div>
 
-      <div className="grid grid-cols-3 gap-3 text-xs text-zinc-400">
+      <div className="grid grid-cols-3 gap-3 text-xs text-fg-subtle">
         <div>
-          <div className="text-[10px] uppercase text-zinc-500">Trigger</div>
-          <div className="text-zinc-200">{run.trigger}{run.parent_run_id ? ` (from #${run.parent_run_id})` : ""}</div>
+          <div className="text-[10px] uppercase text-fg0">Trigger</div>
+          <div className="text-fg-muted">{run.trigger}{run.parent_run_id ? ` (from #${run.parent_run_id})` : ""}</div>
         </div>
         <div>
-          <div className="text-[10px] uppercase text-zinc-500">Rows processed</div>
-          <div className="text-zinc-200">{run.rows_processed}</div>
+          <div className="text-[10px] uppercase text-fg0">Rows processed</div>
+          <div className="text-fg-muted">{run.rows_processed}</div>
         </div>
         <div>
-          <div className="text-[10px] uppercase text-zinc-500">Duration</div>
-          <div className="text-zinc-200">{formatDuration(run.started_at, run.finished_at)}</div>
+          <div className="text-[10px] uppercase text-fg0">Duration</div>
+          <div className="text-fg-muted">{formatDuration(run.started_at, run.finished_at)}</div>
         </div>
       </div>
 

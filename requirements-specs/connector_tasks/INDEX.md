@@ -48,13 +48,13 @@
 | # | TRD ref | Status | Title |
 |---|---|---|---|
 | [01](01_connection_data_model.md) | FR2, FR5, FR7, §11 | [x] | Connection data model upgrade — health, soft-delete, secrets_ref, audit columns + `ConnectionService` (tenant_id left out per decision box, option 1 by default until owner picks) |
-| [02](02_secret_manager_integration.md) | FR3, FR6, Security NFR | [!] | Secret manager integration for credential vaulting — **blocked pending sign-off on encryption approach**. Interim mitigation shipped 2026-07-07: response-layer redaction + auth-gated reads (see FR3 row) |
+| [02](02_secret_manager_integration.md) | FR3, FR6, Security NFR | [x] | Secret manager integration — **resolved 2026-07-14 via `requirements-specs-v5/keeperdb_integration_tasks`**: repo owner signed off on BOTH backends (AES-256-GCM default + Keeper Secrets Manager behind `SECRET_MANAGER_BACKEND=keeper`). Interface, both backends, ConnectionService wiring, explicit idempotent backfill (`POST /connectors/migrate-secrets`), and no-plaintext-leak tests all landed there — see that epic's INDEX progress log |
 | [03](03_connector_catalog_types.md) | FR1 | [x] | Connector types catalog + dynamic form metadata + boundary validation |
 | [04](04_test_connection_with_diagnostics.md) | FR4, Performance NFR | [x] | Test Connection with enhanced diagnostics + timeout (rewrote base.py + all 5 connectors as scoped) |
 | [05](05_health_check_scheduler.md) | FR5, Reliability NFR | [x] | Health check scheduler with status tracking (beat + rate-limited fan-out + health-summary endpoint) |
 | [06](06_discovery_handoff.md) | FR8 | [x] | Schema discovery handoff to Schema Intel |
 | [07](07_dependency_aware_soft_delete.md) | FR7, §10 risk table | [x] | Dependency-aware soft delete with warnings (+ restore, admin hard delete, deleted list) |
-| [08](08_update_and_credential_rotation.md) | FR6, FR9 | [!] | Update connection + credential rotation + audit — blocked on #2 (rotation needs the secret store) |
+| [08](08_update_and_credential_rotation.md) | FR6, FR9 | [~] | Update connection + credential rotation + audit — **rotation half done 2026-07-14 via `requirements-specs-v5` task #6** (`POST /connectors/{id}/rotate-credentials`, admin, vault-backed, audited, no-echo). The edit-non-secret-fields half (`PUT /connectors/{id}`) is still unbuilt |
 | [09](09_connector_tests.md) | §12 DoD | [~] | Test suite — 69 tests landed covering tasks #1/#3/#4/#5/#6/#7 (suite 260/260 green); secret-manager + rotation test modules pending #2/#8 |
 | [10](10_tenant_isolation_signoff.md) | §9 assumption / DoD | [!] | Tenant isolation — cross-reference, not a new task |
 

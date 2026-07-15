@@ -42,8 +42,8 @@ export default function TenantCreateForm({ onClose, onCreated }: TenantCreateFor
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
-      <div className="w-full max-w-md p-6 rounded-2xl bg-zinc-900 border border-zinc-800 flex flex-col gap-4 shadow-2xl">
-        <h3 className="text-lg font-semibold text-zinc-200">Create Tenant</h3>
+      <div className="w-full max-w-md p-6 rounded-2xl bg-surface border border-border flex flex-col gap-4 shadow-2xl">
+        <h3 className="text-lg font-semibold text-fg-muted">Create Tenant</h3>
 
         {error && (
           <div className="p-2 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-300 text-xs">{error}</div>
@@ -51,28 +51,28 @@ export default function TenantCreateForm({ onClose, onCreated }: TenantCreateFor
 
         <form onSubmit={handleCreate} className="flex flex-col gap-3">
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-400">Tenant Name</label>
+            <label className="text-xs text-fg-subtle">Tenant Name</label>
             <input
               value={name}
               onChange={e => handleNameChange(e.target.value)}
               required
               placeholder="Acme Corp"
-              className="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm focus:outline-none focus:border-blue-500 text-zinc-200"
+              className="px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm focus:outline-none focus:border-blue-500 text-fg-muted"
             />
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-400">Slug</label>
+            <label className="text-xs text-fg-subtle">Slug</label>
             <input
               value={slug}
               onChange={e => { setSlug(e.target.value); setAutoSlug(false); }}
               required
               placeholder="acme-corp"
-              className="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-mono focus:outline-none focus:border-blue-500 text-zinc-200"
+              className="px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm font-mono focus:outline-none focus:border-blue-500 text-fg-muted"
             />
-            <span className="text-[10px] text-zinc-600">URL-friendly identifier. Auto-generated from name.</span>
+            <span className="text-[10px] text-fg-subtle">URL-friendly identifier. Auto-generated from name.</span>
           </div>
           <div className="flex gap-2 mt-4">
-            <button type="button" onClick={onClose} className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-semibold text-zinc-400">
+            <button type="button" onClick={onClose} className="flex-1 py-2 bg-surface-overlay hover:bg-surface-overlay rounded-xl text-sm font-semibold text-fg-subtle">
               Cancel
             </button>
             <button type="submit" disabled={creating} className="flex-1 py-2 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-xl text-sm font-semibold text-white disabled:opacity-50">

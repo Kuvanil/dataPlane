@@ -38,11 +38,11 @@ export default function PolicyPanel({
 
   return (
     <section aria-label="Autonomy policy" className="flex flex-col gap-3">
-      <p className="text-xs text-zinc-500 leading-relaxed">
+      <p className="text-xs text-fg0 leading-relaxed">
         Per action type: how far Autopilot may go.{" "}
-        <span className="text-zinc-400">suggest</span> = recommend only,{" "}
-        <span className="text-zinc-400">approve</span> = queue for human approval,{" "}
-        <span className="text-zinc-400">auto</span> = execute autonomously within
+        <span className="text-fg-subtle">suggest</span> = recommend only,{" "}
+        <span className="text-fg-subtle">approve</span> = queue for human approval,{" "}
+        <span className="text-fg-subtle">auto</span> = execute autonomously within
         limits (only reversible, low-risk actions qualify). Destructive and
         security-related actions are hard-blocked server-side regardless of this
         configuration.
@@ -60,10 +60,10 @@ export default function PolicyPanel({
           return (
             <li
               key={p.action_type}
-              className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 flex flex-col gap-2"
+              className="rounded-xl border border-border bg-surface-elevated px-4 py-3 flex flex-col gap-2"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-sm text-zinc-200">
+                <span className="font-mono text-sm text-fg-muted">
                   {p.action_type}
                 </span>
                 <RiskBadge risk={p.risk} />
@@ -72,9 +72,9 @@ export default function PolicyPanel({
                   note={p.reversibility_note}
                 />
               </div>
-              <p className="text-xs text-zinc-500">{p.description}</p>
+              <p className="text-xs text-fg0">{p.description}</p>
               <div className="flex flex-wrap items-center gap-3">
-                <label className="flex items-center gap-2 text-xs text-zinc-500">
+                <label className="flex items-center gap-2 text-xs text-fg0">
                   Autonomy
                   <select
                     aria-label={`Autonomy for ${p.action_type}`}
@@ -90,7 +90,7 @@ export default function PolicyPanel({
                         },
                       }))
                     }
-                    className="bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-2 py-1.5 disabled:opacity-50"
+                    className="bg-surface-overlay border border-border-strong text-fg-muted text-xs rounded-lg px-2 py-1.5 disabled:opacity-50"
                   >
                     {LEVELS.map((lvl) => (
                       <option
@@ -106,7 +106,7 @@ export default function PolicyPanel({
                     ))}
                   </select>
                 </label>
-                <label className="flex items-center gap-2 text-xs text-zinc-500">
+                <label className="flex items-center gap-2 text-xs text-fg0">
                   Max auto/hour
                   <input
                     type="number"
@@ -123,7 +123,7 @@ export default function PolicyPanel({
                         },
                       }))
                     }
-                    className="w-20 bg-zinc-800 border border-zinc-700 text-zinc-200 text-xs rounded-lg px-2 py-1.5 disabled:opacity-50"
+                    className="w-20 bg-surface-overlay border border-border-strong text-fg-muted text-xs rounded-lg px-2 py-1.5 disabled:opacity-50"
                   />
                 </label>
                 {isAdmin && dirty && (
@@ -137,7 +137,7 @@ export default function PolicyPanel({
                   </button>
                 )}
                 {p.updated_by && (
-                  <span className="text-[10px] text-zinc-600">
+                  <span className="text-[10px] text-fg-subtle">
                     last changed by {p.updated_by}
                   </span>
                 )}

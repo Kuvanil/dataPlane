@@ -63,8 +63,8 @@ export default function TenantDetail({ tenantId, onBack, onRefresh }: TenantDeta
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
-        <div className="flex items-center gap-2 text-sm text-zinc-500">
-          <span className="w-4 h-4 border border-zinc-500 border-t-transparent rounded-full animate-spin" />
+        <div className="flex items-center gap-2 text-sm text-fg0">
+          <span className="w-4 h-4 border border-border-strong border-t-transparent rounded-full animate-spin" />
           Loading tenant...
         </div>
       </div>
@@ -73,9 +73,9 @@ export default function TenantDetail({ tenantId, onBack, onRefresh }: TenantDeta
 
   if (error || !tenant) {
     return (
-      <div className="p-5 rounded-2xl bg-zinc-900/50 border border-red-500/30">
+      <div className="p-5 rounded-2xl bg-surface-elevated border border-red-500/30">
         <p className="text-sm text-red-400">{error || "Tenant not found."}</p>
-        <button onClick={onBack} className="mt-2 px-3 py-1.5 text-xs font-semibold rounded-lg border border-zinc-700 text-zinc-300 hover:bg-zinc-800">
+        <button onClick={onBack} className="mt-2 px-3 py-1.5 text-xs font-semibold rounded-lg border border-border-strong text-fg-muted hover:bg-surface-overlay">
           ← Back to tenants
         </button>
       </div>
@@ -94,10 +94,10 @@ export default function TenantDetail({ tenantId, onBack, onRefresh }: TenantDeta
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={onBack} className="text-zinc-500 hover:text-zinc-300 text-sm">←</button>
+          <button onClick={onBack} className="text-fg0 hover:text-fg-muted text-sm">←</button>
           <div>
             <div className="flex items-center gap-2">
-              <h3 className="text-lg font-semibold text-zinc-200">{tenant.name}</h3>
+              <h3 className="text-lg font-semibold text-fg-muted">{tenant.name}</h3>
               <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border ${
                 tenant.status === "active"
                   ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/30"
@@ -106,21 +106,21 @@ export default function TenantDetail({ tenantId, onBack, onRefresh }: TenantDeta
                 {tenant.status}
               </span>
             </div>
-            <span className="text-xs text-zinc-500 font-mono">{tenant.slug} · Created {new Date(tenant.created_at).toLocaleDateString()}</span>
+            <span className="text-xs text-fg0 font-mono">{tenant.slug} · Created {new Date(tenant.created_at).toLocaleDateString()}</span>
           </div>
         </div>
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-1 border-b border-zinc-800">
+      <div className="flex gap-1 border-b border-border">
         {tabs.map(t => (
           <button
             key={t.id}
             onClick={() => setTab(t.id)}
             className={`px-4 py-2 text-xs font-semibold rounded-t-lg transition-all ${
               tab === t.id
-                ? "bg-zinc-800 text-zinc-200 border border-zinc-700 border-b-transparent"
-                : "text-zinc-500 hover:text-zinc-300"
+                ? "bg-surface-overlay text-fg-muted border border-border-strong border-b-transparent"
+                : "text-fg0 hover:text-fg-muted"
             }`}
           >
             {t.label}
@@ -141,30 +141,30 @@ export default function TenantDetail({ tenantId, onBack, onRefresh }: TenantDeta
       {tab === "resources" && (
         <div>
           {resourcesLoading ? (
-            <div className="flex items-center justify-center py-8 text-sm text-zinc-500">Loading resources...</div>
+            <div className="flex items-center justify-center py-8 text-sm text-fg0">Loading resources...</div>
           ) : resources.length === 0 ? (
-            <div className="text-center py-8 text-sm text-zinc-500">No resources in this tenant.</div>
+            <div className="text-center py-8 text-sm text-fg0">No resources in this tenant.</div>
           ) : (
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="border-b border-zinc-800">
-                  <th className="p-2 font-semibold text-zinc-400">Type</th>
-                  <th className="p-2 font-semibold text-zinc-400">Name</th>
-                  <th className="p-2 font-semibold text-zinc-400">Status</th>
-                  <th className="p-2 font-semibold text-zinc-400">Created</th>
+                <tr className="border-b border-border">
+                  <th className="p-2 font-semibold text-fg-subtle">Type</th>
+                  <th className="p-2 font-semibold text-fg-subtle">Name</th>
+                  <th className="p-2 font-semibold text-fg-subtle">Status</th>
+                  <th className="p-2 font-semibold text-fg-subtle">Created</th>
                 </tr>
               </thead>
               <tbody>
                 {resources.map((r, i) => (
-                  <tr key={i} className="border-b border-zinc-800/60 hover:bg-zinc-800/20">
+                  <tr key={i} className="border-b border-border/60 hover:bg-surface-overlay">
                     <td className="p-2">
-                      <span className="text-zinc-400">{r.type === "connection" ? "🔌" : r.type === "mapping" ? "🗺️" : "🔗"} {r.type}</span>
+                      <span className="text-fg-subtle">{r.type === "connection" ? "🔌" : r.type === "mapping" ? "🗺️" : "🔗"} {r.type}</span>
                     </td>
-                    <td className="p-2 text-zinc-200">{r.name}</td>
+                    <td className="p-2 text-fg-muted">{r.name}</td>
                     <td className="p-2">
-                      <span className="text-zinc-400">{r.status}</span>
+                      <span className="text-fg-subtle">{r.status}</span>
                     </td>
-                    <td className="p-2 text-zinc-500">{new Date(r.created_at).toLocaleDateString()}</td>
+                    <td className="p-2 text-fg0">{new Date(r.created_at).toLocaleDateString()}</td>
                   </tr>
                 ))}
               </tbody>
@@ -176,30 +176,30 @@ export default function TenantDetail({ tenantId, onBack, onRefresh }: TenantDeta
       {tab === "users" && (
         <div>
           {usersLoading ? (
-            <div className="flex items-center justify-center py-8 text-sm text-zinc-500">Loading users...</div>
+            <div className="flex items-center justify-center py-8 text-sm text-fg0">Loading users...</div>
           ) : users.length === 0 ? (
-            <div className="text-center py-8 text-sm text-zinc-500">No users in this tenant.</div>
+            <div className="text-center py-8 text-sm text-fg0">No users in this tenant.</div>
           ) : (
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="border-b border-zinc-800">
-                  <th className="p-2 font-semibold text-zinc-400">Name</th>
-                  <th className="p-2 font-semibold text-zinc-400">Email</th>
-                  <th className="p-2 font-semibold text-zinc-400">Role</th>
-                  <th className="p-2 font-semibold text-zinc-400">Last Active</th>
-                  <th className="p-2 font-semibold text-zinc-400">Status</th>
+                <tr className="border-b border-border">
+                  <th className="p-2 font-semibold text-fg-subtle">Name</th>
+                  <th className="p-2 font-semibold text-fg-subtle">Email</th>
+                  <th className="p-2 font-semibold text-fg-subtle">Role</th>
+                  <th className="p-2 font-semibold text-fg-subtle">Last Active</th>
+                  <th className="p-2 font-semibold text-fg-subtle">Status</th>
                 </tr>
               </thead>
               <tbody>
                 {users.map((u) => (
-                  <tr key={u.id} className="border-b border-zinc-800/60 hover:bg-zinc-800/20">
-                    <td className="p-2 text-zinc-200">{u.name}</td>
-                    <td className="p-2 text-zinc-400">{u.email}</td>
-                    <td className="p-2 text-zinc-300">{u.role}</td>
-                    <td className="p-2 text-zinc-500">{u.last_active ? new Date(u.last_active).toLocaleDateString() : "—"}</td>
+                  <tr key={u.id} className="border-b border-border/60 hover:bg-surface-overlay">
+                    <td className="p-2 text-fg-muted">{u.name}</td>
+                    <td className="p-2 text-fg-subtle">{u.email}</td>
+                    <td className="p-2 text-fg-muted">{u.role}</td>
+                    <td className="p-2 text-fg0">{u.last_active ? new Date(u.last_active).toLocaleDateString() : "—"}</td>
                     <td className="p-2">
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
-                        u.status === "active" ? "bg-emerald-500/10 text-emerald-400" : "bg-zinc-800 text-zinc-500"
+                        u.status === "active" ? "bg-emerald-500/10 text-emerald-400" : "bg-surface-overlay text-fg0"
                       }`}>
                         {u.status}
                       </span>
@@ -215,28 +215,28 @@ export default function TenantDetail({ tenantId, onBack, onRefresh }: TenantDeta
       {tab === "audit" && (
         <div>
           {auditLoading ? (
-            <div className="flex items-center justify-center py-8 text-sm text-zinc-500">Loading audit events...</div>
+            <div className="flex items-center justify-center py-8 text-sm text-fg0">Loading audit events...</div>
           ) : auditEvents.length === 0 ? (
-            <div className="text-center py-8 text-sm text-zinc-500">No audit events for this tenant.</div>
+            <div className="text-center py-8 text-sm text-fg0">No audit events for this tenant.</div>
           ) : (
             <table className="w-full text-left border-collapse text-xs">
               <thead>
-                <tr className="border-b border-zinc-800">
-                  <th className="p-2 font-semibold text-zinc-400">Timestamp</th>
-                  <th className="p-2 font-semibold text-zinc-400">Actor</th>
-                  <th className="p-2 font-semibold text-zinc-400">Action</th>
-                  <th className="p-2 font-semibold text-zinc-400">Target</th>
-                  <th className="p-2 font-semibold text-zinc-400">Module</th>
+                <tr className="border-b border-border">
+                  <th className="p-2 font-semibold text-fg-subtle">Timestamp</th>
+                  <th className="p-2 font-semibold text-fg-subtle">Actor</th>
+                  <th className="p-2 font-semibold text-fg-subtle">Action</th>
+                  <th className="p-2 font-semibold text-fg-subtle">Target</th>
+                  <th className="p-2 font-semibold text-fg-subtle">Module</th>
                 </tr>
               </thead>
               <tbody>
                 {auditEvents.map((e, i) => (
-                  <tr key={e.id ?? i} className="border-b border-zinc-800/60 hover:bg-zinc-800/20">
-                    <td className="p-2 text-zinc-400 whitespace-nowrap">{new Date(e.timestamp).toLocaleString()}</td>
-                    <td className="p-2 text-zinc-300">{e.actor}</td>
-                    <td className="p-2 text-zinc-200">{e.action}</td>
-                    <td className="p-2 text-zinc-400">{e.target}</td>
-                    <td className="p-2 text-zinc-500">{e.module}</td>
+                  <tr key={e.id ?? i} className="border-b border-border/60 hover:bg-surface-overlay">
+                    <td className="p-2 text-fg-subtle whitespace-nowrap">{new Date(e.timestamp).toLocaleString()}</td>
+                    <td className="p-2 text-fg-muted">{e.actor}</td>
+                    <td className="p-2 text-fg-muted">{e.action}</td>
+                    <td className="p-2 text-fg-subtle">{e.target}</td>
+                    <td className="p-2 text-fg0">{e.module}</td>
                   </tr>
                 ))}
               </tbody>
@@ -251,24 +251,24 @@ export default function TenantDetail({ tenantId, onBack, onRefresh }: TenantDeta
 function ResourceCard({ label, value, max, icon }: { label: string; value: number; max?: number | null; icon: string }) {
   const pct = max != null && max > 0 ? Math.round((value / max) * 100) : null;
   return (
-    <div className="p-5 rounded-2xl bg-zinc-900/50 border border-zinc-800">
+    <div className="p-5 rounded-2xl bg-surface-elevated border border-border">
       <div className="flex items-center gap-2 mb-2">
         <span className="text-lg">{icon}</span>
-        <span className="text-xs text-zinc-500">{label}</span>
+        <span className="text-xs text-fg0">{label}</span>
       </div>
-      <div className="text-2xl font-bold text-zinc-200">
+      <div className="text-2xl font-bold text-fg-muted">
         {value}
-        {max != null && <span className="text-sm text-zinc-500 font-normal"> / {max}</span>}
+        {max != null && <span className="text-sm text-fg0 font-normal"> / {max}</span>}
       </div>
       {pct != null && (
         <div className="mt-2">
-          <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+          <div className="h-1.5 bg-surface-overlay rounded-full overflow-hidden">
             <div
               className={`h-full rounded-full ${pct > 90 ? "bg-red-500" : pct > 70 ? "bg-amber-500" : "bg-emerald-500"}`}
               style={{ width: `${Math.min(pct, 100)}%` }}
             />
           </div>
-          <span className="text-[10px] text-zinc-500 mt-1">{pct}% used</span>
+          <span className="text-[10px] text-fg0 mt-1">{pct}% used</span>
         </div>
       )}
     </div>

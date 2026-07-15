@@ -17,14 +17,14 @@ export default function ConfirmDialog({
 }: ConfirmDialogProps) {
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
-      <div className="w-full max-w-md p-6 rounded-2xl bg-zinc-900 border border-zinc-800 flex flex-col gap-4 shadow-2xl">
-        <h3 className="text-lg font-semibold text-zinc-200">{title}</h3>
-        <p className="text-sm text-zinc-400 whitespace-pre-line">{message}</p>
+      <div className="w-full max-w-md p-6 rounded-2xl bg-surface border border-border flex flex-col gap-4 shadow-2xl">
+        <h3 className="text-lg font-semibold text-fg-muted">{title}</h3>
+        <p className="text-sm text-fg-subtle whitespace-pre-line">{message}</p>
         <div className="flex gap-2 mt-2">
           <button
             onClick={onCancel}
             disabled={busy}
-            className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-semibold text-zinc-400 disabled:opacity-50"
+            className="flex-1 py-2 bg-surface-overlay hover:bg-surface-overlay rounded-xl text-sm font-semibold text-fg-subtle disabled:opacity-50"
           >
             Cancel
           </button>

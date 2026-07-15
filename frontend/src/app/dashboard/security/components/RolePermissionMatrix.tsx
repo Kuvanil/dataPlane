@@ -90,14 +90,14 @@ export default function RolePermissionMatrix({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex items-center gap-3">
-        <label className="text-xs text-zinc-500">Role:</label>
+        <label className="text-xs text-fg0">Role:</label>
         <select
           value={selectedRoleId ?? ""}
           onChange={(e) => {
             if (dirty && !window.confirm("You have unsaved permission changes. Discard them?")) return;
             setSelectedRoleId(Number(e.target.value));
           }}
-          className="px-3 py-1.5 text-sm rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-200"
+          className="px-3 py-1.5 text-sm rounded-lg bg-surface border border-border-strong text-fg-muted"
         >
           {activeRoles.map((r) => (
             <option key={r.id} value={r.id}>{r.name}</option>
@@ -111,7 +111,7 @@ export default function RolePermissionMatrix({
             <button
               onClick={discard}
               disabled={!dirty || saving}
-              className="px-3 py-1.5 text-xs font-semibold text-zinc-400 bg-zinc-800 hover:bg-zinc-700 rounded-lg disabled:opacity-40"
+              className="px-3 py-1.5 text-xs font-semibold text-fg-subtle bg-surface-overlay hover:bg-surface-overlay rounded-lg disabled:opacity-40"
             >
               Discard
             </button>
@@ -127,13 +127,13 @@ export default function RolePermissionMatrix({
       </div>
 
       {loading ? (
-        <div className="h-64 rounded-xl bg-zinc-900/40 border border-zinc-800 animate-pulse" />
+        <div className="h-64 rounded-xl bg-surface-elevated border border-border animate-pulse" />
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-zinc-800">
+        <div className="overflow-x-auto rounded-xl border border-border">
           <table className="w-full text-left border-collapse text-sm min-w-[720px]">
             <thead>
-              <tr className="border-b border-zinc-800 bg-zinc-950/60">
-                <th className="p-3 font-semibold text-zinc-400">Module</th>
+              <tr className="border-b border-border bg-background/60">
+                <th className="p-3 font-semibold text-fg-subtle">Module</th>
                 {ACTIONS.map((a) => (
                   <th key={a} className={classNames("p-3 font-semibold text-center capitalize", actionColor(a))}>
                     {a}
@@ -144,8 +144,8 @@ export default function RolePermissionMatrix({
             </thead>
             <tbody>
               {MODULES.map((module) => (
-                <tr key={module} className="border-b border-zinc-800/60 hover:bg-zinc-800/10">
-                  <td className="p-3 font-mono text-xs text-zinc-300">{module}</td>
+                <tr key={module} className="border-b border-border/60 hover:bg-surface-overlay">
+                  <td className="p-3 font-mono text-xs text-fg-muted">{module}</td>
                   {ACTIONS.map((action) => {
                     const perm = permByCell.get(`${module}:${action}`);
                     const checked = perm ? grantedIds.has(perm.id) : false;
@@ -164,7 +164,7 @@ export default function RolePermissionMatrix({
                   {canManage && (
                     <td className="p-3 text-center whitespace-nowrap">
                       <button onClick={() => toggleRow(module, true)} className="text-[10px] text-blue-400 hover:text-blue-300 mr-2">all</button>
-                      <button onClick={() => toggleRow(module, false)} className="text-[10px] text-zinc-500 hover:text-zinc-400">none</button>
+                      <button onClick={() => toggleRow(module, false)} className="text-[10px] text-fg0 hover:text-fg-subtle">none</button>
                     </td>
                   )}
                 </tr>
@@ -174,7 +174,7 @@ export default function RolePermissionMatrix({
         </div>
       )}
       {!canManage && (
-        <p className="text-xs text-zinc-500">Only admins can change role permissions. You can view the matrix as read-only.</p>
+        <p className="text-xs text-fg0">Only admins can change role permissions. You can view the matrix as read-only.</p>
       )}
     </div>
   );

@@ -21,6 +21,51 @@ This is a working log for agents (Kimchi and others) that don't retain context b
 
 ## Log
 
+- 2026-07-15 — Validated the completed v3 Agentic DBA, v4 ACI, and v5 Keeper secrets
+  implementations and added per-epic `bugs.md`/`enhancements.md` reports. Fixed two v5 issues:
+  `tests/secrets/__init__.py` shadowed the stdlib `secrets` module and aborted pytest collection on
+  Python 3.13; partial credential rotation swallowed vault read failures and could overwrite a
+  multi-field record with only the submitted field. Rotation now fails closed with a regression
+  test. Targeted suites: v3 81, v4 50, v5 41; frontend Vitest 125; TypeScript and production build
+  clean. Final post-fix backend suite: 797/797.
+
+- 2026-07-14 — Scoped (spec only, no code) a new epic — **ACI.dev External Tools Integration**
+  (`requirements-specs-v4/TRD_DataPlane_ACI_External_Tools_Integration.md` +
+  `aci_integration_tasks/INDEX.md`, 11 tasks). Origin: capability-brainstorm on
+  [ACI.dev](https://github.com/aipotheosis-labs/aci) (Apache 2.0, self-hostable — 600+ external
+  SaaS tool integrations, multi-tenant OAuth/secrets, dynamic tool discovery via search+execute
+  meta-functions). dataPlane today has zero path from any module to an external (non-database)
+  system — this adds one, narrowly: a `aci_client_service.py` wrapper (reusing the existing
+  `CircuitBreaker` class, same pattern as Ollama), a new external-side-effect governance category
+  extending `autopilot_registry.py`'s existing allow-list (default-deny, same stance as
+  `ddl_execute`), notify-out fan-out for Autopilot/Agentic DBA Copilot approval queues and pipeline
+  failures, and a new `"external_action"` AskData intent. Deliberately deferred:
+  bidirectional "approve from Slack" (Task #6, `[?]` — needs real inbound-webhook signature
+  verification + external-identity-to-dataPlane-role mapping design, not a fast-follow). Task #10
+  is `[!]` blocked pending tenant isolation — **eighth** epic to hit that same deferred gap. Not
+  started.
+- 2026-07-14 — Scoped (spec only, no code) a new epic — **Agentic DBA Copilot**
+  (`requirements-specs-v3/TRD_DataPlane_Agentic_DBA_Copilot.md` +
+  `agentic_dba_tasks/INDEX.md`, 12 tasks) — triggered by a real user report: asking Query
+  Workspace's Ask mode a complex build request ("create new target schemas for retail analytics
+  in postgresql based on profiling... data quality steps, transformations and final target
+  tables") returned a meaningless `SELECT * FROM tables[0] LIMIT 50` query. Root-caused via code
+  audit: `NL2SQLService.generate_sql` has zero intent classification and that heuristic fallback
+  fires whenever no read-query keyword matches — not a bug, a scope boundary (AskData is
+  deliberately SELECT-only, refuses non-SELECT output). Designed as a **second capability**,
+  reusing rather than duplicating existing infra: Autopilot's governance/allow-list pattern
+  (`autopilot_registry.py` already hard-bans `ddl_execute` from auto-execution — new
+  `schema_design_create` action follows the same `auto_capable=False` precedent, not a new
+  authorization model), Schema Mapper's transformation grammar + draft/validate/publish lifecycle
+  (reused unmodified for generated mappings), Query Studio's existing DDL-capable write-execution
+  path (reused for actual table creation, no new executor), and the legacy
+  extract→match→diff→migrate flow in `ai_tasks.py`/`schema_mapper_service.py` (closest prior art
+  for a chained, human-gated plan). Core non-negotiable: plan → approve → execute, never
+  autonomous, under any policy setting — mirrors this repo's own existing stance on `ddl_execute`.
+  Task #11 is `[!]` blocked pending the tenant-isolation architecture decision
+  (`requirements-specs/tenant_isolation_tasks/`) — this is the **seventh** epic to hit that same
+  deferred gap (mapper, schema intel, connectors, dashboard, autopilot, the original schema-mapper
+  review, now this one). Not started.
 - 2026-07-14 — Scoped (spec only, no code) a new epic to merge AskData Bot and Query Studio —
   both already fully built as separate sidebar tabs (8/9 FRs each) — into one dashboard tab with
   an Ask/SQL mode toggle. `requirements-specs-v2/query_workspace_tasks/INDEX.md` + 8 task files

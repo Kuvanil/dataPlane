@@ -1,26 +1,103 @@
 @import "tailwindcss";
 
+/*
+ * dataPlane theme tokens (theme_redesign_tasks #1)
+ * --------------------------------------------------------------
+ * Light defaults live in `:root`; dark overrides live in `.dark`.
+ * The class is applied by an inline <script> in app/layout.tsx
+ * before paint, so the first React render already matches the DOM
+ * (no hydration flash, no hydration warning).
+ *
+ * Tailwind v4 consumes the tokens via `@theme inline`, which makes
+ * them available as utilities: `bg-surface`, `text-fg-muted`, etc.
+ * Status accents (blue, emerald, red, amber …) intentionally stay
+ * as raw Tailwind classes — they already carry semantic meaning
+ * and read correctly in both themes.
+ */
+
 :root {
+  /* Light defaults */
   --background: #ffffff;
-  --foreground: #171717;
+  --surface: #f9fafb;          /* zinc-50  */
+  --surface-elevated: #ffffff;
+  --surface-overlay: #f4f4f5;  /* zinc-100 */
+
+  --fg: #18181b;               /* zinc-900 */
+  --fg-muted: #3f3f46;         /* zinc-700 */
+  --fg-subtle: #71717a;        /* zinc-500 */
+
+  --border: #e4e4e7;           /* zinc-200 */
+  --border-strong: #d4d4d8;    /* zinc-300 */
+
+  --accent: #4f46e5;           /* indigo-600 */
+  --accent-fg: #ffffff;
+  --accent-soft: rgba(79, 70, 229, 0.08);
+
+  --success: #059669;
+  --warning: #d97706;
+  --danger: #dc2626;
+
+  /* Page chrome (navbar / footer shadow) */
+  --chrome-shadow: 0 1px 0 0 rgb(0 0 0 / 0.04);
 }
 
+.dark {
+  --background: #09090b;       /* zinc-950 */
+  --surface: #18181b;          /* zinc-900  */
+  --surface-elevated: rgba(24, 24, 27, 0.6);
+  --surface-overlay: rgba(39, 39, 42, 0.5);
+
+  --fg: #fafafa;               /* zinc-50  */
+  --fg-muted: #d4d4d8;         /* zinc-300 */
+  --fg-subtle: #a1a1aa;        /* zinc-400 */
+
+  --border: #27272a;           /* zinc-800 */
+  --border-strong: #3f3f46;    /* zinc-700 */
+
+  --accent: #818cf8;           /* indigo-400 — lighter so it reads on dark */
+  --accent-fg: #09090b;
+  --accent-soft: rgba(129, 140, 248, 0.12);
+
+  --success: #10b981;
+  --warning: #f59e0b;
+  --danger: #ef4444;
+
+  --chrome-shadow: 0 1px 0 0 rgb(255 255 255 / 0.04);
+}
+
+/*
+ * `@theme inline` exposes the variables as Tailwind color tokens
+ * without re-declaring them, so `bg-surface`, `text-fg`, etc. all
+ * pick up the live values from `:root` / `.dark`.
+ */
 @theme inline {
   --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-surface-elevated: var(--surface-elevated);
+  --color-surface-overlay: var(--surface-overlay);
+
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+
+  --color-accent: var(--accent);
+  --color-accent-fg: var(--accent-fg);
+  --color-accent-soft: var(--accent-soft);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-danger: var(--danger);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
 body {
   background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  color: var(--fg);
+  font-family: var(--font-sans), Arial, Helvetica, sans-serif;
+  transition: background-color 150ms ease, color 150ms ease;
 }

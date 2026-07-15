@@ -108,12 +108,12 @@ export default function UserRoleAssignment({
   };
 
   if (loading) {
-    return <div className="h-64 rounded-xl bg-zinc-900/40 border border-zinc-800 animate-pulse" />;
+    return <div className="h-64 rounded-xl bg-surface-elevated border border-border animate-pulse" />;
   }
 
   if (users.length === 0) {
     return (
-      <div className="p-6 text-center text-sm text-zinc-500 rounded-xl border border-zinc-800 bg-zinc-900/30">
+      <div className="p-6 text-center text-sm text-fg0 rounded-xl border border-border bg-surface-elevated">
         No users found.
       </div>
     );
@@ -126,7 +126,7 @@ export default function UserRoleAssignment({
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           placeholder="Search users by email..."
-          className="px-3 py-2 text-sm rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-200"
+          className="px-3 py-2 text-sm rounded-lg bg-surface border border-border-strong text-fg-muted"
         />
         <div className="flex flex-col gap-1 max-h-[480px] overflow-y-auto">
           {filteredUsers.map((u) => (
@@ -135,14 +135,14 @@ export default function UserRoleAssignment({
               onClick={() => setSelectedUserId(u.id)}
               className={`text-left p-3 rounded-lg border text-sm transition-colors ${
                 selectedUserId === u.id
-                  ? "border-blue-500/40 bg-blue-500/10 text-zinc-100"
-                  : "border-zinc-800 bg-zinc-900/30 text-zinc-400 hover:bg-zinc-800/40"
+                  ? "border-blue-500/40 bg-blue-500/10 text-fg"
+                  : "border-border bg-surface-elevated text-fg-subtle hover:bg-surface-overlay"
               }`}
             >
               <div className="font-medium truncate">{u.email}</div>
               <div className="flex gap-1 mt-1 flex-wrap">
                 {u.roles.length === 0 ? (
-                  <span className="text-[10px] text-zinc-600">no roles</span>
+                  <span className="text-[10px] text-fg-subtle">no roles</span>
                 ) : (
                   u.roles.map((rn) => (
                     <span key={rn} className={`text-[10px] px-1.5 py-0.5 rounded border ${roleColor(rn)}`}>{rn}</span>
@@ -156,16 +156,16 @@ export default function UserRoleAssignment({
 
       <div className="flex flex-col gap-4">
         {!selectedUser ? (
-          <div className="p-6 text-center text-sm text-zinc-500 rounded-xl border border-zinc-800 bg-zinc-900/30">
+          <div className="p-6 text-center text-sm text-fg0 rounded-xl border border-border bg-surface-elevated">
             Select a user to manage roles.
           </div>
         ) : (
           <>
-            <div className="p-4 rounded-xl border border-zinc-800 bg-zinc-900/30">
+            <div className="p-4 rounded-xl border border-border bg-surface-elevated">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-semibold text-zinc-200">{selectedUser.email}</p>
-                  <p className="text-xs text-zinc-500">cached role (used by legacy checks): {selectedUser.cached_role}</p>
+                  <p className="text-sm font-semibold text-fg-muted">{selectedUser.email}</p>
+                  <p className="text-xs text-fg0">cached role (used by legacy checks): {selectedUser.cached_role}</p>
                 </div>
               </div>
               <div className="flex flex-wrap gap-2 mt-3">
@@ -179,14 +179,14 @@ export default function UserRoleAssignment({
                     )}
                   </span>
                 ))}
-                {selectedUser.roles.length === 0 && <span className="text-xs text-zinc-600">No roles assigned</span>}
+                {selectedUser.roles.length === 0 && <span className="text-xs text-fg-subtle">No roles assigned</span>}
               </div>
               {canManage && (
                 <div className="flex gap-2 mt-3">
                   <select
                     value={addRoleId}
                     onChange={(e) => setAddRoleId(e.target.value ? Number(e.target.value) : "")}
-                    className="px-3 py-1.5 text-sm rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-200"
+                    className="px-3 py-1.5 text-sm rounded-lg bg-background border border-border-strong text-fg-muted"
                   >
                     <option value="">Add role...</option>
                     {assignableRoles.map((r) => (
@@ -205,17 +205,17 @@ export default function UserRoleAssignment({
             </div>
 
             <div>
-              <h4 className="text-sm font-semibold text-zinc-300 mb-2">Effective permissions</h4>
+              <h4 className="text-sm font-semibold text-fg-muted mb-2">Effective permissions</h4>
               {previewLoading ? (
-                <div className="h-40 rounded-xl bg-zinc-900/40 border border-zinc-800 animate-pulse" />
+                <div className="h-40 rounded-xl bg-surface-elevated border border-border animate-pulse" />
               ) : preview ? (
-                <div className="overflow-x-auto rounded-xl border border-zinc-800">
+                <div className="overflow-x-auto rounded-xl border border-border">
                   <table className="w-full text-left border-collapse text-xs min-w-[560px]">
                     <thead>
-                      <tr className="border-b border-zinc-800 bg-zinc-950/60">
-                        <th className="p-2 font-semibold text-zinc-400">Module</th>
-                        <th className="p-2 font-semibold text-zinc-400">Granted actions</th>
-                        <th className="p-2 font-semibold text-zinc-400">Via role(s)</th>
+                      <tr className="border-b border-border bg-background/60">
+                        <th className="p-2 font-semibold text-fg-subtle">Module</th>
+                        <th className="p-2 font-semibold text-fg-subtle">Granted actions</th>
+                        <th className="p-2 font-semibold text-fg-subtle">Via role(s)</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -223,18 +223,18 @@ export default function UserRoleAssignment({
                         const granted = Object.entries(actions).filter(([, v]) => v.granted);
                         const viaRoles = new Set(granted.flatMap(([, v]) => v.via_roles));
                         return (
-                          <tr key={module} className="border-b border-zinc-800/60">
-                            <td className="p-2 font-mono text-zinc-300">{module}</td>
+                          <tr key={module} className="border-b border-border/60">
+                            <td className="p-2 font-mono text-fg-muted">{module}</td>
                             <td className="p-2">
                               {granted.length === 0 ? (
-                                <span className="text-zinc-600">denied (no grants)</span>
+                                <span className="text-fg-subtle">denied (no grants)</span>
                               ) : (
                                 granted.map(([action]) => (
                                   <span key={action} className={`mr-2 ${actionColor(action)}`}>{action}</span>
                                 ))
                               )}
                             </td>
-                            <td className="p-2 text-zinc-500">{[...viaRoles].join(", ") || "—"}</td>
+                            <td className="p-2 text-fg0">{[...viaRoles].join(", ") || "—"}</td>
                           </tr>
                         );
                       })}
@@ -242,7 +242,7 @@ export default function UserRoleAssignment({
                   </table>
                 </div>
               ) : (
-                <p className="text-xs text-zinc-500">Unable to load effective permissions.</p>
+                <p className="text-xs text-fg0">Unable to load effective permissions.</p>
               )}
             </div>
           </>

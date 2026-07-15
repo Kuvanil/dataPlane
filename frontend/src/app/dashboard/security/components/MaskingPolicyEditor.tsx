@@ -103,19 +103,19 @@ export default function MaskingPolicyEditor({
   const connectionName = (id: number) => connections.find((c) => c.id === id)?.name ?? `#${id}`;
 
   if (loading) {
-    return <div className="h-48 rounded-xl bg-zinc-900/40 border border-zinc-800 animate-pulse" />;
+    return <div className="h-48 rounded-xl bg-surface-elevated border border-border animate-pulse" />;
   }
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-between items-center">
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-fg0">
           Masks column values for every role not in the exempt list — enforced in Visualize queries against the matching connection/table/column.
         </p>
         {canManage && !formOpen && (
           <button
             onClick={() => setFormOpen(true)}
-            className="px-3 py-1.5 text-xs font-semibold text-zinc-950 bg-white rounded-lg hover:bg-zinc-200 shrink-0"
+            className="px-3 py-1.5 text-xs font-semibold text-fg bg-white rounded-lg hover:bg-surface shrink-0"
           >
             + New Masking Policy
           </button>
@@ -128,7 +128,7 @@ export default function MaskingPolicyEditor({
             <select
               value={connectionId}
               onChange={(e) => { setConnectionId(e.target.value ? Number(e.target.value) : ""); setTableName(""); setColumnName(""); }}
-              className="px-3 py-2 text-sm rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-200"
+              className="px-3 py-2 text-sm rounded-lg bg-background border border-border-strong text-fg-muted"
             >
               <option value="">Connection...</option>
               {connections.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -137,7 +137,7 @@ export default function MaskingPolicyEditor({
               <select
                 value={tableName}
                 onChange={(e) => { setTableName(e.target.value); setColumnName(""); }}
-                className="px-3 py-2 text-sm rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-200"
+                className="px-3 py-2 text-sm rounded-lg bg-background border border-border-strong text-fg-muted"
               >
                 <option value="">Table...</option>
                 {tables.map((t) => <option key={t.table_name} value={t.table_name}>{t.table_name}</option>)}
@@ -147,14 +147,14 @@ export default function MaskingPolicyEditor({
                 value={tableName}
                 onChange={(e) => setTableName(e.target.value)}
                 placeholder="Table name (not yet scanned)"
-                className="px-3 py-2 text-sm rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-200"
+                className="px-3 py-2 text-sm rounded-lg bg-background border border-border-strong text-fg-muted"
               />
             )}
             {selectedTable ? (
               <select
                 value={columnName}
                 onChange={(e) => setColumnName(e.target.value)}
-                className="px-3 py-2 text-sm rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-200"
+                className="px-3 py-2 text-sm rounded-lg bg-background border border-border-strong text-fg-muted"
               >
                 <option value="">Column...</option>
                 {selectedTable.columns.map((c) => <option key={c.column_name} value={c.column_name}>{c.column_name}</option>)}
@@ -164,17 +164,17 @@ export default function MaskingPolicyEditor({
                 value={columnName}
                 onChange={(e) => setColumnName(e.target.value)}
                 placeholder="Column name"
-                className="px-3 py-2 text-sm rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-200"
+                className="px-3 py-2 text-sm rounded-lg bg-background border border-border-strong text-fg-muted"
               />
             )}
           </div>
 
           <div className="flex items-center gap-3">
-            <label className="text-xs text-zinc-500">Masking type:</label>
+            <label className="text-xs text-fg0">Masking type:</label>
             <select
               value={maskingType}
               onChange={(e) => setMaskingType(e.target.value as MaskingType)}
-              className="px-3 py-1.5 text-sm rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-200"
+              className="px-3 py-1.5 text-sm rounded-lg bg-background border border-border-strong text-fg-muted"
             >
               {MASKING_TYPES.map((t) => <option key={t} value={t}>{maskingTypeLabel(t)}</option>)}
             </select>
@@ -184,12 +184,12 @@ export default function MaskingPolicyEditor({
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-xs text-zinc-500">Roles exempt (see real value):</label>
+            <label className="text-xs text-fg0">Roles exempt (see real value):</label>
             {roles.filter((r) => r.is_active).map((r) => (
               <button
                 key={r.id}
                 onClick={() => toggleExempt(r.name)}
-                className={`text-xs px-2 py-1 rounded-full border ${exemptRoles.has(r.name) ? roleColor(r.name) : "border-zinc-700 text-zinc-600"}`}
+                className={`text-xs px-2 py-1 rounded-full border ${exemptRoles.has(r.name) ? roleColor(r.name) : "border-border-strong text-fg-subtle"}`}
               >
                 {r.name}
               </button>
@@ -197,11 +197,11 @@ export default function MaskingPolicyEditor({
           </div>
 
           {sampleValues && (
-            <div className="p-2 rounded-lg bg-zinc-950 border border-zinc-800 text-xs font-mono">
+            <div className="p-2 rounded-lg bg-background border border-border text-xs font-mono">
               {sampleValues.map((v, i) => (
                 <div key={i} className="flex gap-2 py-0.5">
-                  <span className="text-zinc-500 w-32 truncate">{v}</span>
-                  <span className="text-zinc-600">→</span>
+                  <span className="text-fg0 w-32 truncate">{v}</span>
+                  <span className="text-fg-subtle">→</span>
                   <span className="text-emerald-400">{previewMask(v, maskingType)}</span>
                 </div>
               ))}
@@ -216,7 +216,7 @@ export default function MaskingPolicyEditor({
             >
               Save Policy
             </button>
-            <button onClick={() => setFormOpen(false)} className="px-3 py-1.5 text-xs font-semibold text-zinc-400 bg-zinc-800 hover:bg-zinc-700 rounded-lg">
+            <button onClick={() => setFormOpen(false)} className="px-3 py-1.5 text-xs font-semibold text-fg-subtle bg-surface-overlay hover:bg-surface-overlay rounded-lg">
               Cancel
             </button>
           </div>
@@ -224,16 +224,16 @@ export default function MaskingPolicyEditor({
       )}
 
       {policies.length === 0 ? (
-        <div className="p-6 text-center text-sm text-zinc-500 rounded-xl border border-zinc-800 bg-zinc-900/30">
+        <div className="p-6 text-center text-sm text-fg0 rounded-xl border border-border bg-surface-elevated">
           No masking policies defined.
         </div>
       ) : (
         <div className="flex flex-col gap-2">
           {policies.map((p) => (
-            <div key={p.id} className="p-3 rounded-xl border border-zinc-800 bg-zinc-900/30 flex items-center justify-between gap-4">
+            <div key={p.id} className="p-3 rounded-xl border border-border bg-surface-elevated flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm text-zinc-200 font-mono">{connectionName(p.connection_id)} · {p.table_name}.{p.column_name}</p>
-                <p className="text-xs text-zinc-500">
+                <p className="text-sm text-fg-muted font-mono">{connectionName(p.connection_id)} · {p.table_name}.{p.column_name}</p>
+                <p className="text-xs text-fg0">
                   {maskingTypeLabel(p.masking_type)} — exempt: {p.exempt_roles.length ? p.exempt_roles.join(", ") : "none"}
                 </p>
               </div>

@@ -99,15 +99,15 @@ export default function MappingList({
 
   return (
     <aside
-      className="w-72 border-r border-zinc-800 bg-zinc-900/30 flex flex-col"
+      className="w-72 border-r border-border bg-surface-elevated flex flex-col"
       aria-label="Mappings list"
     >
-      <div className="p-4 border-b border-zinc-800 flex items-center justify-between">
+      <div className="p-4 border-b border-border flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-zinc-200">
+          <h3 className="text-sm font-semibold text-fg-muted">
             Mappings{total > 0 ? ` · ${total}` : ""}
           </h3>
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">
+          <p className="text-[10px] text-fg0 uppercase tracking-wider">
             Drafts & published
           </p>
         </div>
@@ -125,12 +125,12 @@ export default function MappingList({
 
       <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <div className="p-4 text-xs text-zinc-500">Loading…</div>
+          <div className="p-4 text-xs text-fg0">Loading…</div>
         ) : error ? (
           <div className="p-4 text-xs text-red-400">{error}</div>
         ) : mappings.length === 0 ? (
-          <div className="p-4 text-xs text-zinc-500">
-            No mappings yet. Click <span className="text-zinc-300">+ New</span> to create one.
+          <div className="p-4 text-xs text-fg0">
+            No mappings yet. Click <span className="text-fg-muted">+ New</span> to create one.
           </div>
         ) : (
           <>
@@ -145,7 +145,7 @@ export default function MappingList({
                       "w-full text-left px-3 py-2 rounded-lg text-xs transition-all border",
                       selectedId === m.id
                         ? "bg-blue-600/10 border-blue-500/30 text-blue-300"
-                        : "border-transparent hover:bg-zinc-800/40 text-zinc-300",
+                        : "border-transparent hover:bg-surface-overlay text-fg-muted",
                     )}
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -155,13 +155,13 @@ export default function MappingList({
                           "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase",
                           m.status === "published"
                             ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-                            : "bg-zinc-800 text-zinc-400",
+                            : "bg-surface-overlay text-fg-subtle",
                         )}
                       >
                         {m.status}
                       </span>
                     </div>
-                    <div className="mt-1 text-[10px] text-zinc-500 flex items-center gap-2">
+                    <div className="mt-1 text-[10px] text-fg0 flex items-center gap-2">
                       <span>#{m.id}</span>
                       <span>·</span>
                       <span>{m.edges.length} edges</span>
@@ -178,7 +178,7 @@ export default function MappingList({
                   type="button"
                   onClick={() => void loadMore()}
                   disabled={loadingMore}
-                  className="w-full py-1.5 text-[11px] font-medium text-zinc-400 hover:text-zinc-200 border border-zinc-800 rounded-lg hover:bg-zinc-800/40 disabled:opacity-50"
+                  className="w-full py-1.5 text-[11px] font-medium text-fg-subtle hover:text-fg-muted border border-border rounded-lg hover:bg-surface-overlay disabled:opacity-50"
                 >
                   {loadingMore ? "Loading…" : `Load more (${mappings.length} of ${total})`}
                 </button>
@@ -300,28 +300,28 @@ function CreateMappingModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-xl bg-zinc-900 border border-zinc-800 p-6 shadow-2xl">
-        <h2 className="text-lg font-semibold text-zinc-100 mb-1">New Mapping</h2>
-        <p className="text-xs text-zinc-500 mb-4">
+      <div className="w-full max-w-md rounded-xl bg-surface border border-border p-6 shadow-2xl">
+        <h2 className="text-lg font-semibold text-fg mb-1">New Mapping</h2>
+        <p className="text-xs text-fg0 mb-4">
           Create a draft mapping. You can save and publish later.
         </p>
         <div className="flex flex-col gap-3">
-          <label className="text-xs text-zinc-400">
+          <label className="text-xs text-fg-subtle">
             Name
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="CRM → DW Customer Sync"
-              className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-100 focus:outline-none focus:border-blue-500"
+              className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm text-fg focus:outline-none focus:border-blue-500"
             />
           </label>
-          <label className="text-xs text-zinc-400">
+          <label className="text-xs text-fg-subtle">
             Source connection
             <select
               value={sourceId ?? ""}
               onChange={(e) => setSourceId(Number(e.target.value))}
-              className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-100 focus:outline-none focus:border-blue-500"
+              className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm text-fg focus:outline-none focus:border-blue-500"
             >
               {connectors.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -330,12 +330,12 @@ function CreateMappingModal({
               ))}
             </select>
           </label>
-          <label className="text-xs text-zinc-400">
+          <label className="text-xs text-fg-subtle">
             Target connection
             <select
               value={targetId ?? ""}
               onChange={(e) => setTargetId(Number(e.target.value))}
-              className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-100 focus:outline-none focus:border-blue-500"
+              className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm text-fg focus:outline-none focus:border-blue-500"
             >
               {connectors.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -354,7 +354,7 @@ function CreateMappingModal({
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 rounded-lg"
+            className="px-4 py-2 text-sm text-fg-subtle hover:text-fg-muted rounded-lg"
           >
             Cancel
           </button>

@@ -41,7 +41,7 @@ export default function AuditPage() {
   return (
     <div className="p-6 flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-zinc-100">Audit Trail</h1>
+        <h1 className="text-xl font-semibold text-fg">Audit Trail</h1>
         <ExportButton filters={filters} />
       </div>
 
@@ -59,7 +59,7 @@ export default function AuditPage() {
       )}
 
       <div className="grid gap-6" style={{ gridTemplateColumns: selected ? "1fr 420px" : "1fr" }}>
-        <div className="rounded-2xl bg-zinc-900/50 border border-zinc-800 overflow-hidden overflow-x-auto">
+        <div className="rounded-2xl bg-surface-elevated border border-border overflow-hidden overflow-x-auto">
           <EventTable
             events={events}
             isLoading={isLoading}
@@ -76,20 +76,20 @@ export default function AuditPage() {
       </div>
 
       <div className="flex items-center justify-between">
-        <span className="text-xs text-zinc-500">{total} event{total === 1 ? "" : "s"}</span>
+        <span className="text-xs text-fg0">{total} event{total === 1 ? "" : "s"}</span>
         <div className="flex items-center gap-3">
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg disabled:opacity-40"
+            className="px-3 py-1.5 text-xs bg-surface-overlay hover:bg-surface-overlay text-fg-muted rounded-lg disabled:opacity-40"
           >
             Previous
           </button>
-          <span className="text-xs text-zinc-400">Page {page}</span>
+          <span className="text-xs text-fg-subtle">Page {page}</span>
           <button
             onClick={() => setPage((p) => p + 1)}
             disabled={!hasMore}
-            className="px-3 py-1.5 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-300 rounded-lg disabled:opacity-40"
+            className="px-3 py-1.5 text-xs bg-surface-overlay hover:bg-surface-overlay text-fg-muted rounded-lg disabled:opacity-40"
           >
             Next
           </button>

@@ -30,11 +30,11 @@ export default function ValidationPanel({
   return (
     <section
       aria-label="Validation results"
-      className="border-t border-zinc-800 bg-zinc-900/40"
+      className="border-t border-border bg-surface-elevated"
     >
       <div className="px-5 py-2.5 flex items-center justify-between">
         <div className="flex items-center gap-3">
-          <h3 className="text-sm font-semibold text-zinc-200">Validation</h3>
+          <h3 className="text-sm font-semibold text-fg-muted">Validation</h3>
           <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-red-500/10 text-red-300 border border-red-500/20">
             {blocking_count} blocking
           </span>
@@ -48,7 +48,7 @@ export default function ValidationPanel({
         <button
           type="button"
           onClick={onClose}
-          className="text-xs text-zinc-500 hover:text-zinc-300"
+          className="text-xs text-fg0 hover:text-fg-muted"
           aria-label="Close validation panel"
         >
           ✕
@@ -56,7 +56,7 @@ export default function ValidationPanel({
       </div>
       <div className="px-5 pb-3 max-h-48 overflow-y-auto">
         {issues.length === 0 ? (
-          <div className="text-xs text-zinc-500 italic py-2">
+          <div className="text-xs text-fg0 italic py-2">
             No issues reported.
           </div>
         ) : (

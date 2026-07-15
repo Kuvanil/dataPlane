@@ -145,4 +145,7 @@ class ColumnProfileResult:
     max_value: Optional[str] = None
     sample_values: List[Any] = field(default_factory=list)
     sample_size_used: int = 0
+    # Total table row count (agentic_dba_tasks #2) — every connector already
+    # computes this for null_rate; exposing it enables uniqueness_ratio.
+    row_count: Optional[int] = None
     error: Optional[str] = None

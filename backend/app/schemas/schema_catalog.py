@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -27,6 +27,11 @@ class ColumnProfileResponse(BaseModel):
     max_value: Optional[str]
     sample_size_used: int
     profiled_at: datetime
+    # Enrichment (agentic_dba_tasks #2) — nullable until a re-profile runs.
+    row_count: Optional[int] = None
+    uniqueness_ratio: Optional[float] = None
+    duplicate_count: Optional[int] = None
+    fk_candidates: Optional[List[Dict[str, Any]]] = None
 
 
 class ColumnClassificationResponse(BaseModel):

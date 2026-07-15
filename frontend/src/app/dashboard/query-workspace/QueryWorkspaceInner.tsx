@@ -111,18 +111,18 @@ function QueryWorkspaceInner() {
   return (
     <div className="flex h-full flex-col">
       {/* ── Header with mode toggle ─────────────────────────────── */}
-      <div className="p-4 border-b border-zinc-800 bg-zinc-900/40 backdrop-blur-sm flex justify-between items-center shrink-0">
+      <div className="p-4 border-b border-border bg-surface-elevated backdrop-blur-sm flex justify-between items-center shrink-0">
         <div>
-          <h3 className="text-lg font-semibold text-zinc-200">Query Workspace</h3>
-          <p className="text-xs text-zinc-500">Ask in plain English or write SQL — switch freely, no state lost.</p>
+          <h3 className="text-lg font-semibold text-fg-muted">Query Workspace</h3>
+          <p className="text-xs text-fg0">Ask in plain English or write SQL — switch freely, no state lost.</p>
         </div>
-        <div className="flex items-center gap-2 bg-zinc-800/60 rounded-lg p-0.5">
+        <div className="flex items-center gap-2 bg-surface-overlay rounded-lg p-0.5">
           <button
             onClick={() => handleModeChange("ask")}
             className={`relative px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
               mode === "ask"
                 ? "bg-blue-600 text-white shadow-sm"
-                : "text-zinc-400 hover:text-zinc-200"
+                : "text-fg-subtle hover:text-fg-muted"
             }`}
           >
             Ask
@@ -135,7 +135,7 @@ function QueryWorkspaceInner() {
             className={`relative px-3 py-1.5 text-xs font-medium rounded-md transition-all ${
               mode === "sql"
                 ? "bg-blue-600 text-white shadow-sm"
-                : "text-zinc-400 hover:text-zinc-200"
+                : "text-fg-subtle hover:text-fg-muted"
             }`}
           >
             SQL

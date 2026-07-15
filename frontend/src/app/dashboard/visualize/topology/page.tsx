@@ -82,10 +82,10 @@ function TableNode({ data }: { data: GraphNodeData }) {
       <Handle type="source" position={Position.Right} style={{ background: r.border }} />
 
       {/* Header */}
-      <div className="px-4 py-2.5 flex items-center justify-between border-b border-zinc-800/60" style={{ background: r.bg }}>
+      <div className="px-4 py-2.5 flex items-center justify-between border-b border-border/60" style={{ background: r.bg }}>
         <div className="flex items-center gap-2">
           <span className="text-base">{data.group === "source" ? "📤" : "📥"}</span>
-          <span className="text-sm font-bold text-zinc-100 tracking-tight">{data.label}</span>
+          <span className="text-sm font-bold text-fg tracking-tight">{data.label}</span>
         </div>
         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${r.badge}`}>
           {data.risk_level?.toUpperCase()}
@@ -98,30 +98,30 @@ function TableNode({ data }: { data: GraphNodeData }) {
           const cls = col.classification || {};
           const clsColor =
             cls.level === "High" ? "text-red-400" :
-            cls.level === "Medium" ? "text-amber-400" : "text-zinc-500";
+            cls.level === "Medium" ? "text-amber-400" : "text-fg0";
 
           return (
-            <div key={i} className="flex items-center justify-between text-[11px] px-1.5 py-0.5 rounded hover:bg-zinc-800/40 transition-colors">
+            <div key={i} className="flex items-center justify-between text-[11px] px-1.5 py-0.5 rounded hover:bg-surface-overlay transition-colors">
               <span className="flex items-center gap-1.5">
                 {col.primary_key && <span className="text-amber-400 text-[9px]">🔑</span>}
-                <span className="font-mono text-zinc-300">{col.name}</span>
+                <span className="font-mono text-fg-muted">{col.name}</span>
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="text-zinc-600 font-mono">{col.type}</span>
+                <span className="text-fg-subtle font-mono">{col.type}</span>
                 {cls.label && <span className={`text-[9px] font-semibold ${clsColor}`}>{cls.label}</span>}
               </span>
             </div>
           );
         })}
         {(data.columns || []).length > 8 && (
-          <div className="text-[10px] text-zinc-600 text-center mt-1">+{(data.columns ?? []).length - 8} more columns</div>
+          <div className="text-[10px] text-fg-subtle text-center mt-1">+{(data.columns ?? []).length - 8} more columns</div>
         )}
       </div>
 
       {/* Footer */}
-      <div className="px-3 py-1.5 border-t border-zinc-800/40 flex items-center justify-between">
-        <span className="text-[10px] text-zinc-500">{data.database}</span>
-        <span className="text-[10px] text-zinc-600">{data.column_count} cols</span>
+      <div className="px-3 py-1.5 border-t border-border/40 flex items-center justify-between">
+        <span className="text-[10px] text-fg0">{data.database}</span>
+        <span className="text-[10px] text-fg-subtle">{data.column_count} cols</span>
       </div>
 
       {data.has_issues && (
@@ -238,21 +238,21 @@ export default function TopologyPage() {
   return (
     <div className="flex h-full flex-col">
       {/* Toolbar */}
-      <div className="p-4 border-b border-zinc-800 bg-zinc-900/40 backdrop-blur-sm flex justify-between items-center">
+      <div className="p-4 border-b border-border bg-surface-elevated backdrop-blur-sm flex justify-between items-center">
         <div>
-          <h3 className="text-lg font-semibold text-zinc-200">Database Topology Visualizer</h3>
-          <p className="text-xs text-zinc-500">Interactive graph showing table relationships, data risks, and AI-matched mappings</p>
+          <h3 className="text-lg font-semibold text-fg-muted">Database Topology Visualizer</h3>
+          <p className="text-xs text-fg0">Interactive graph showing table relationships, data risks, and AI-matched mappings</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Visible labels so these read as connection pickers, not
               buttons — they were bare selects visually identical to the
               view-mode buttons beside them (dashboard_static_ui_tasks #4). */}
-          <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+          <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-fg0">
             📤 Source
             <select
               value={sourceId ?? ""}
               onChange={(e) => setSourceId(e.target.value === "" ? null : Number(e.target.value))}
-              className="px-2 py-1.5 text-xs font-semibold rounded-lg bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              className="px-2 py-1.5 text-xs font-semibold rounded-lg bg-surface-overlay text-fg-muted border border-border-strong hover:bg-surface-overlay focus:outline-none focus:ring-2 focus:ring-blue-500/50"
             >
               <option value="">Select…</option>
               {connections.map((c: ConnectorRef) => (
@@ -260,12 +260,12 @@ export default function TopologyPage() {
               ))}
             </select>
           </label>
-          <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-zinc-500">
+          <label className="flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-wider text-fg0">
             📥 Target
             <select
               value={targetId ?? ""}
               onChange={(e) => setTargetId(e.target.value === "" ? null : Number(e.target.value))}
-              className="px-2 py-1.5 text-xs font-semibold rounded-lg bg-zinc-800 text-zinc-300 border border-zinc-700 hover:bg-zinc-700 focus:outline-none focus:ring-2 focus:ring-blue-500/50"
+              className="px-2 py-1.5 text-xs font-semibold rounded-lg bg-surface-overlay text-fg-muted border border-border-strong hover:bg-surface-overlay focus:outline-none focus:ring-2 focus:ring-blue-500/50"
             >
               <option value="">Select…</option>
               {connections.map((c: ConnectorRef) => (
@@ -280,7 +280,7 @@ export default function TopologyPage() {
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all ${
                 viewMode === mode
                   ? "bg-blue-600 text-white"
-                  : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700"
+                  : "bg-surface-overlay text-fg-subtle hover:bg-surface-overlay"
               }`}
             >
               {mode === "all" ? "🌐 All" : mode === "source" ? "📤 Source" : "📥 Target"}
@@ -296,7 +296,7 @@ export default function TopologyPage() {
       </div>
 
       {loading ? (
-        <div className="flex-1 flex items-center justify-center text-zinc-500">
+        <div className="flex-1 flex items-center justify-center text-fg0">
           <div className="flex flex-col items-center gap-3">
             <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
             <span className="text-sm">Building database graph...</span>
@@ -306,11 +306,11 @@ export default function TopologyPage() {
         <div className="flex-1 flex items-center justify-center p-8">
           <div className="max-w-md text-center flex flex-col items-center gap-2">
             <span className="text-3xl">🌐</span>
-            <p className="text-sm text-zinc-300 font-medium">
+            <p className="text-sm text-fg-muted font-medium">
               Pick a source and a target connection above to build the graph.
             </p>
             {connections.length < 2 && (
-              <p className="text-xs text-zinc-500">
+              <p className="text-xs text-fg0">
                 {connections.length === 0
                   ? "No connections available — add one on the Connectors tab first."
                   : "Only one connection exists — the graph compares two, add another on the Connectors tab."}
@@ -339,19 +339,19 @@ export default function TopologyPage() {
               maxZoom={2}
             >
               <Background color="#27272a" gap={20} size={1} />
-              <Controls className="!bg-zinc-900 !border-zinc-800 !text-zinc-400 !rounded-lg !shadow-xl" />
+              <Controls className="!bg-surface !border-border !text-fg-subtle !rounded-lg !shadow-xl" />
             </ReactFlow>
 
             {/* Legend Overlay */}
-            <div className="absolute top-4 left-4 p-3 rounded-xl bg-zinc-900/90 border border-zinc-800 backdrop-blur-md w-44 flex flex-col gap-2 shadow-2xl">
-              <span className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider mb-1">Legend</span>
+            <div className="absolute top-4 left-4 p-3 rounded-xl bg-surface-elevated border border-border backdrop-blur-md w-44 flex flex-col gap-2 shadow-2xl">
+              <span className="text-[10px] font-bold text-fg-subtle uppercase tracking-wider mb-1">Legend</span>
               {[
                 { color: "#22c55e", label: "Low Risk" },
                 { color: "#f59e0b", label: "Medium Risk" },
                 { color: "#ef4444", label: "High Risk / PII" },
                 { color: "#8b5cf6", label: "AI Match (dashed)" },
               ].map((item, i) => (
-                <div key={i} className="flex items-center gap-2 text-[11px] text-zinc-400">
+                <div key={i} className="flex items-center gap-2 text-[11px] text-fg-subtle">
                   <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: item.color }} />
                   {item.label}
                 </div>
@@ -366,19 +366,19 @@ export default function TopologyPage() {
                 { label: "Matched", value: summary.matched_tables, color: "text-emerald-400" },
                 { label: "Issues", value: summary.total_annotations, color: "text-red-400" },
               ].map((s, i) => (
-                <div key={i} className="px-3 py-2 rounded-lg bg-zinc-900/90 border border-zinc-800 backdrop-blur-md">
+                <div key={i} className="px-3 py-2 rounded-lg bg-surface-elevated border border-border backdrop-blur-md">
                   <div className={`text-lg font-bold ${s.color}`}>{s.value ?? 0}</div>
-                  <div className="text-[10px] text-zinc-500">{s.label}</div>
+                  <div className="text-[10px] text-fg0">{s.label}</div>
                 </div>
               ))}
             </div>
           </div>
 
           {/* Side Panel: Annotations + Details */}
-          <aside className="w-72 border-l border-zinc-800 bg-zinc-900/30 flex flex-col overflow-y-auto">
-            <div className="p-4 border-b border-zinc-800">
-              <h4 className="text-sm font-semibold text-zinc-200">Issues & Annotations</h4>
-              <p className="text-[10px] text-zinc-500 mt-0.5">{annotations.length} finding(s)</p>
+          <aside className="w-72 border-l border-border bg-surface-elevated flex flex-col overflow-y-auto">
+            <div className="p-4 border-b border-border">
+              <h4 className="text-sm font-semibold text-fg-muted">Issues & Annotations</h4>
+              <p className="text-[10px] text-fg0 mt-0.5">{annotations.length} finding(s)</p>
             </div>
             <div className="flex flex-col gap-1.5 p-3">
               {annotations.map((a: GraphAnnotation, i: number) => (
@@ -395,19 +395,19 @@ export default function TopologyPage() {
                 </div>
               ))}
               {annotations.length === 0 && (
-                <div className="text-xs text-zinc-500 text-center py-4">No issues detected ✅</div>
+                <div className="text-xs text-fg0 text-center py-4">No issues detected ✅</div>
               )}
             </div>
 
             {/* Selected Node Detail */}
             {selectedNode && (
-              <div className="border-t border-zinc-800 p-4">
-                <h4 className="text-sm font-semibold text-zinc-200 mb-2">📋 {selectedNode.label}</h4>
+              <div className="border-t border-border p-4">
+                <h4 className="text-sm font-semibold text-fg-muted mb-2">📋 {selectedNode.label}</h4>
                 <div className="flex flex-col gap-1.5 text-xs">
-                  <div className="flex justify-between"><span className="text-zinc-500">Database</span><span className="text-zinc-300">{selectedNode.database}</span></div>
-                  <div className="flex justify-between"><span className="text-zinc-500">Group</span><span className="text-zinc-300 capitalize">{selectedNode.group}</span></div>
-                  <div className="flex justify-between"><span className="text-zinc-500">Columns</span><span className="text-zinc-300">{selectedNode.column_count}</span></div>
-                  <div className="flex justify-between"><span className="text-zinc-500">Risk</span><span className={selectedNode.risk_level === "high" ? "text-red-400" : selectedNode.risk_level === "medium" ? "text-amber-400" : "text-emerald-400"}>{selectedNode.risk_level?.toUpperCase()}</span></div>
+                  <div className="flex justify-between"><span className="text-fg0">Database</span><span className="text-fg-muted">{selectedNode.database}</span></div>
+                  <div className="flex justify-between"><span className="text-fg0">Group</span><span className="text-fg-muted capitalize">{selectedNode.group}</span></div>
+                  <div className="flex justify-between"><span className="text-fg0">Columns</span><span className="text-fg-muted">{selectedNode.column_count}</span></div>
+                  <div className="flex justify-between"><span className="text-fg0">Risk</span><span className={selectedNode.risk_level === "high" ? "text-red-400" : selectedNode.risk_level === "medium" ? "text-amber-400" : "text-emerald-400"}>{selectedNode.risk_level?.toUpperCase()}</span></div>
                 </div>
               </div>
             )}

@@ -67,11 +67,11 @@ export default function ScheduleEditor({
   };
 
   return (
-    <div className="border border-zinc-800 rounded-lg p-4 bg-zinc-900/40">
+    <div className="border border-border rounded-lg p-4 bg-surface-elevated">
       <div className="flex items-center justify-between mb-3">
-        <h4 className="text-sm font-semibold text-zinc-200">Schedule</h4>
+        <h4 className="text-sm font-semibold text-fg-muted">Schedule</h4>
         {schedule && (
-          <label className="flex items-center gap-2 text-xs text-zinc-400">
+          <label className="flex items-center gap-2 text-xs text-fg-subtle">
             <input
               type="checkbox"
               checked={schedule.enabled}
@@ -85,7 +85,7 @@ export default function ScheduleEditor({
       </div>
 
       <div className="flex flex-col gap-2">
-        <label className="text-xs text-zinc-400">
+        <label className="text-xs text-fg-subtle">
           Cron expression
           <input
             type="text"
@@ -93,10 +93,10 @@ export default function ScheduleEditor({
             disabled={!canEdit}
             onChange={(e) => setCron(e.target.value)}
             placeholder="0 2 * * *"
-            className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-100 font-mono focus:outline-none focus:border-blue-500 disabled:opacity-60"
+            className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm text-fg font-mono focus:outline-none focus:border-blue-500 disabled:opacity-60"
           />
         </label>
-        <p className="text-[11px] text-zinc-500">Preview: {describeCron(cron)}</p>
+        <p className="text-[11px] text-fg0">Preview: {describeCron(cron)}</p>
 
         {canEdit && (
           <div className="flex flex-wrap gap-1.5">
@@ -105,7 +105,7 @@ export default function ScheduleEditor({
                 key={preset.value}
                 type="button"
                 onClick={() => setCron(preset.value)}
-                className="px-2 py-1 text-[10px] rounded border border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60"
+                className="px-2 py-1 text-[10px] rounded border border-border-strong text-fg-subtle hover:text-fg-muted hover:bg-surface-overlay"
               >
                 {preset.label}
               </button>
@@ -113,19 +113,19 @@ export default function ScheduleEditor({
           </div>
         )}
 
-        <label className="text-xs text-zinc-400">
+        <label className="text-xs text-fg-subtle">
           Timezone
           <input
             type="text"
             value={timezone}
             disabled={!canEdit}
             onChange={(e) => setTimezone(e.target.value)}
-            className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 disabled:opacity-60"
+            className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm text-fg focus:outline-none focus:border-blue-500 disabled:opacity-60"
           />
         </label>
 
         {schedule?.next_run_at && (
-          <p className="text-[11px] text-zinc-500">Next run: {new Date(schedule.next_run_at).toLocaleString()}</p>
+          <p className="text-[11px] text-fg0">Next run: {new Date(schedule.next_run_at).toLocaleString()}</p>
         )}
 
         {error && <p className="text-xs text-red-400">{error}</p>}
@@ -153,10 +153,10 @@ export default function ScheduleEditor({
         )}
       </div>
 
-      <div className="mt-4 pt-4 border-t border-zinc-800">
-        <h4 className="text-sm font-semibold text-zinc-200 mb-3">Retry policy</h4>
+      <div className="mt-4 pt-4 border-t border-border">
+        <h4 className="text-sm font-semibold text-fg-muted mb-3">Retry policy</h4>
         <div className="flex gap-3">
-          <label className="text-xs text-zinc-400 flex-1">
+          <label className="text-xs text-fg-subtle flex-1">
             Max attempts
             <input
               type="number"
@@ -165,10 +165,10 @@ export default function ScheduleEditor({
               value={maxAttempts}
               disabled={!canEdit}
               onChange={(e) => setMaxAttempts(Number(e.target.value))}
-              className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 disabled:opacity-60"
+              className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm text-fg focus:outline-none focus:border-blue-500 disabled:opacity-60"
             />
           </label>
-          <label className="text-xs text-zinc-400 flex-1">
+          <label className="text-xs text-fg-subtle flex-1">
             Backoff (seconds)
             <input
               type="number"
@@ -176,7 +176,7 @@ export default function ScheduleEditor({
               value={backoffSeconds}
               disabled={!canEdit}
               onChange={(e) => setBackoffSeconds(Number(e.target.value))}
-              className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-100 focus:outline-none focus:border-blue-500 disabled:opacity-60"
+              className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm text-fg focus:outline-none focus:border-blue-500 disabled:opacity-60"
             />
           </label>
         </div>
@@ -185,7 +185,7 @@ export default function ScheduleEditor({
             type="button"
             onClick={() => void saveRetryPolicy()}
             disabled={savingRetry}
-            className="mt-3 px-3 py-1.5 text-xs font-semibold bg-zinc-800 text-zinc-200 border border-zinc-700 rounded-lg hover:bg-zinc-700 disabled:opacity-50"
+            className="mt-3 px-3 py-1.5 text-xs font-semibold bg-surface-overlay text-fg-muted border border-border-strong rounded-lg hover:bg-surface-overlay disabled:opacity-50"
           >
             {savingRetry ? "Saving…" : "Save retry policy"}
           </button>

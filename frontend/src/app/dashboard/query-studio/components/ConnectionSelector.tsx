@@ -14,7 +14,7 @@ export default function ConnectionSelector({
     <select
       value={value ?? ""}
       onChange={(e) => onChange(Number(e.target.value))}
-      className="px-3 py-1.5 text-xs rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-300 focus:outline-none focus:border-blue-500"
+      className="px-3 py-1.5 text-xs rounded-lg bg-surface-overlay border border-border-strong text-fg-muted focus:outline-none focus:border-blue-500"
     >
       <option value="" disabled>Select a connection…</option>
       {connections.map((c) => (

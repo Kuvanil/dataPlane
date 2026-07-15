@@ -24,3 +24,7 @@ ENV/
 # OS/System
 .DS_Store
 Thumbs.db
+
+# Keeper Secrets Manager bootstrap config (requirements-specs-v5) — never commit
+ksm_config*.json
+vendor/aci/

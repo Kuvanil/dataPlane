@@ -151,6 +151,40 @@ def hard_delete_connection(id: int, db: Session = Depends(get_db),
     ConnectionService.hard_delete_connection(db, id, actor=_actor(user))
 
 
+# ── Credential vaulting (keeperdb_integration_tasks #5/#6) ─────
+
+
+@router.post("/migrate-secrets")
+def migrate_secrets(db: Session = Depends(get_db),
+                    user: User = Depends(require_role("admin"))):
+    """One-time, idempotent backfill: move legacy plaintext secrets out of
+    the config column into the vault. Explicit and admin-triggered — NEVER a
+    side effect of a read (connector_tasks #2's corrected design). Re-running
+    is a no-op."""
+    from app.services.connection_secrets_service import migrate_plaintext_secrets
+    return migrate_plaintext_secrets(db, actor=_actor(user))
+
+
+@router.post("/{id}/rotate-credentials")
+def rotate_credentials(id: int, body: dict, db: Session = Depends(get_db),
+                       user: User = Depends(require_role("admin"))):
+    """Rotate a connection's credentials via the vault. The response never
+    echoes secret values — field names only. Body validated manually so a
+    malformed request can't bounce secrets back in a 422 echo."""
+    secrets = (body or {}).get("secrets")
+    if (not isinstance(secrets, dict) or not secrets
+            or not all(isinstance(v, str) and v for v in secrets.values())):
+        # Deliberately does NOT echo the received body (connector_tasks #2's
+        # 422-echo risk note).
+        raise HTTPException(
+            status_code=422,
+            detail="body must be {\"secrets\": {\"<field>\": \"<value>\"}} with "
+                   "non-empty string values (values not echoed)",
+        )
+    from app.services.connection_secrets_service import rotate_credentials as _rotate
+    return _rotate(db, id, secrets, actor=_actor(user))
+
+
 # ── Test / schema / discovery ──────────────────────────────────
 
 @router.post("/{id}/test", response_model=TestConnectionResponse)

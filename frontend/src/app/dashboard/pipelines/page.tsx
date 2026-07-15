@@ -91,10 +91,10 @@ export default function PipelinesPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="p-4 border-b border-zinc-800 bg-zinc-900/40 backdrop-blur-sm flex flex-wrap justify-between items-center gap-3">
+      <div className="p-4 border-b border-border bg-surface-elevated backdrop-blur-sm flex flex-wrap justify-between items-center gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-zinc-200">Pipelines</h3>
-          <p className="text-xs text-zinc-500">
+          <h3 className="text-lg font-semibold text-fg-muted">Pipelines</h3>
+          <p className="text-xs text-fg0">
             Create, schedule, run, and monitor data pipelines built on published mappings
           </p>
         </div>
@@ -119,11 +119,11 @@ export default function PipelinesPage() {
           <div className="flex-1 flex items-center justify-center p-10">
             <div className="max-w-md text-center">
               <div className="text-5xl mb-3">🔀</div>
-              <h2 className="text-lg font-semibold text-zinc-200 mb-2">
+              <h2 className="text-lg font-semibold text-fg-muted mb-2">
                 {p.detailLoading ? "Loading pipeline…" : "Select or create a pipeline"}
               </h2>
-              <p className="text-sm text-zinc-500">
-                Pick a pipeline from the list, or click <span className="text-zinc-300">+ New</span> to create one
+              <p className="text-sm text-fg0">
+                Pick a pipeline from the list, or click <span className="text-fg-muted">+ New</span> to create one
                 from a published Schema Mapper mapping.
               </p>
             </div>
@@ -133,19 +133,19 @@ export default function PipelinesPage() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-semibold text-zinc-100">{pipeline.name}</h2>
+                  <h2 className="text-lg font-semibold text-fg">{pipeline.name}</h2>
                   <span
                     className={classNames(
                       "px-1.5 py-0.5 rounded text-[9px] font-bold uppercase border",
                       pipeline.enabled
                         ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                        : "bg-zinc-800 text-zinc-400 border-zinc-700",
+                        : "bg-surface-overlay text-fg-subtle border-border-strong",
                     )}
                   >
                     {pipeline.enabled ? "enabled" : "disabled"}
                   </span>
                 </div>
-                <p className="text-xs text-zinc-500 mt-1">
+                <p className="text-xs text-fg0 mt-1">
                   #{pipeline.id} · mapping #{pipeline.mapping_id} (v{pipeline.mapping_version_id}) · updated {formatRelativeTime(pipeline.updated_at)}
                 </p>
               </div>
@@ -155,7 +155,7 @@ export default function PipelinesPage() {
                   <button
                     type="button"
                     onClick={() => void p.updatePipeline(pipeline.id, { enabled: !pipeline.enabled })}
-                    className="px-3 py-1.5 text-xs font-semibold text-zinc-300 border border-zinc-700 rounded-lg hover:bg-zinc-800/60"
+                    className="px-3 py-1.5 text-xs font-semibold text-fg-muted border border-border-strong rounded-lg hover:bg-surface-overlay"
                   >
                     {pipeline.enabled ? "Disable" : "Enable"}
                   </button>
@@ -164,7 +164,7 @@ export default function PipelinesPage() {
                   type="button"
                   onClick={() => void handleCheckDrift()}
                   disabled={checkingDrift}
-                  className="px-3 py-1.5 text-xs font-semibold text-zinc-300 border border-zinc-700 rounded-lg hover:bg-zinc-800/60 disabled:opacity-50"
+                  className="px-3 py-1.5 text-xs font-semibold text-fg-muted border border-border-strong rounded-lg hover:bg-surface-overlay disabled:opacity-50"
                 >
                   {checkingDrift ? "Checking…" : "Check drift"}
                 </button>

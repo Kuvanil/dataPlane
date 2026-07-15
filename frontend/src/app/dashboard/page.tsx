@@ -112,13 +112,13 @@ export default function DashboardPage() {
     <div className="p-6 flex flex-col gap-6 overflow-y-auto">
       {/* Header: title + time-range filter (dashboard_tasks #6) */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-zinc-100">Dashboard</h1>
+        <h1 className="text-2xl font-bold text-fg">Dashboard</h1>
         <TimeRangeFilter value={range} onChange={handleRangeChange} disabled={summary.isLoading} />
       </div>
 
       {/* KPI tiles with drill-through (dashboard_tasks #4) */}
       {summary.isError ? (
-        <div className="p-5 rounded-2xl bg-zinc-900/50 border border-red-500/30 backdrop-blur-sm">
+        <div className="p-5 rounded-2xl bg-surface-elevated border border-red-500/30 backdrop-blur-sm">
           <p className="text-sm text-red-400">
             Failed to load dashboard summary{summary.errorMessage ? ` — ${summary.errorMessage}` : ""}.
           </p>
@@ -153,7 +153,7 @@ export default function DashboardPage() {
         ].map((a, i) => (
           <Link key={i} href={a.href} className={`p-4 rounded-xl bg-gradient-to-br ${a.color} border backdrop-blur-sm flex items-center gap-3 transition-all group`}>
             <span className="text-2xl group-hover:scale-110 transition-transform">{a.icon}</span>
-            <span className="text-sm font-semibold text-zinc-200">{a.label}</span>
+            <span className="text-sm font-semibold text-fg-muted">{a.label}</span>
           </Link>
         ))}
       </div>
@@ -167,11 +167,11 @@ export default function DashboardPage() {
             {drift.data!.map((alert) => (
               <div key={alert.id} className="flex items-center justify-between p-3 rounded-xl bg-red-500/5 border border-red-500/10">
                 <div>
-                  <span className="text-sm font-medium text-zinc-200">{alert.connection_name ?? "Unknown connection"}</span>
-                  <span className="text-xs text-zinc-500 ml-2">schema changed</span>
+                  <span className="text-sm font-medium text-fg-muted">{alert.connection_name ?? "Unknown connection"}</span>
+                  <span className="text-xs text-fg0 ml-2">schema changed</span>
                 </div>
                 <div className="flex items-center gap-3">
-                  <span className="text-xs text-zinc-500">{new Date(alert.created_at).toLocaleString()}</span>
+                  <span className="text-xs text-fg0">{new Date(alert.created_at).toLocaleString()}</span>
                   <Link href="/dashboard/schema" className="text-xs text-blue-400 hover:text-blue-300">Inspect →</Link>
                 </div>
               </div>
@@ -207,15 +207,15 @@ export default function DashboardPage() {
             {connectors.data?.map((db) => {
               const status = testResults[db.id] ?? "testing";
               return (
-                <div key={db.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-zinc-800/30 transition-colors">
+                <div key={db.id} className="flex items-center gap-3 p-2 rounded-lg hover:bg-surface-overlay transition-colors">
                   <span className="text-lg">{TYPE_ICONS[db.type] ?? "🔌"}</span>
                   <div className="flex-1 min-w-0">
-                    <div className="text-xs font-medium text-zinc-200 truncate">{db.name}</div>
-                    <div className="text-[10px] text-zinc-500">{db.type}</div>
+                    <div className="text-xs font-medium text-fg-muted truncate">{db.name}</div>
+                    <div className="text-[10px] text-fg0">{db.type}</div>
                   </div>
                   {status === "testing" ? (
-                    <span className="text-[10px] text-zinc-500 font-semibold flex items-center gap-1">
-                      <span className="w-2.5 h-2.5 border border-zinc-500 border-t-transparent rounded-full animate-spin" />
+                    <span className="text-[10px] text-fg0 font-semibold flex items-center gap-1">
+                      <span className="w-2.5 h-2.5 border border-border-strong border-t-transparent rounded-full animate-spin" />
                       testing
                     </span>
                   ) : status === "connected" ? (

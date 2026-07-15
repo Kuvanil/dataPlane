@@ -31,10 +31,10 @@ export default function VisualizePage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="p-4 border-b border-zinc-800 bg-zinc-900/40 backdrop-blur-sm flex flex-wrap justify-between items-center gap-3">
+      <div className="p-4 border-b border-border bg-surface-elevated backdrop-blur-sm flex flex-wrap justify-between items-center gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-zinc-200">Visualize</h3>
-          <p className="text-xs text-zinc-500">
+          <h3 className="text-lg font-semibold text-fg-muted">Visualize</h3>
+          <p className="text-xs text-fg0">
             Build charts from your catalog data — dimensions, measures, filters, saved views
           </p>
         </div>
@@ -42,7 +42,7 @@ export default function VisualizePage() {
           <select
             value={v.connectionId ?? ""}
             onChange={(e) => v.setConnectionId(Number(e.target.value))}
-            className="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-100 focus:outline-none focus:border-blue-500"
+            className="px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm text-fg focus:outline-none focus:border-blue-500"
           >
             {v.connections.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
@@ -56,7 +56,7 @@ export default function VisualizePage() {
           <ExportMenu result={v.result} containerRef={chartContainerRef} chartType={v.chartType} />
           <Link
             href="/dashboard/visualize/topology"
-            className="px-3 py-2 text-xs font-semibold text-zinc-400 border border-zinc-700 rounded-lg hover:bg-zinc-800/60"
+            className="px-3 py-2 text-xs font-semibold text-fg-subtle border border-border-strong rounded-lg hover:bg-surface-overlay"
           >
             Schema Topology →
           </Link>
@@ -64,9 +64,9 @@ export default function VisualizePage() {
       </div>
 
       <div className="flex-1 flex overflow-hidden">
-        <aside className="w-80 border-r border-zinc-800 bg-zinc-900/20 p-4 overflow-y-auto flex flex-col gap-5">
+        <aside className="w-80 border-r border-border bg-surface-elevated p-4 overflow-y-auto flex flex-col gap-5">
           <div>
-            <div className="text-xs text-zinc-400 mb-1.5">Chart type</div>
+            <div className="text-xs text-fg-subtle mb-1.5">Chart type</div>
             <ChartTypeSelector
               value={v.chartType}
               onChange={v.setChartType}

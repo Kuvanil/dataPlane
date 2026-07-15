@@ -197,8 +197,8 @@ export default function AutopilotPage() {
     <div className="p-8 flex flex-col gap-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-zinc-200">AI Autopilot</h3>
-          <p className="text-xs text-zinc-500">
+          <h3 className="text-lg font-semibold text-fg-muted">AI Autopilot</h3>
+          <p className="text-xs text-fg0">
             Policy-governed recommendations with human-in-the-loop approval and
             full audit
           </p>
@@ -212,7 +212,7 @@ export default function AutopilotPage() {
               className={`px-3 py-1.5 text-xs font-semibold rounded-lg border ${
                 tab === t.key
                   ? "bg-violet-500/15 text-violet-300 border-violet-500/30"
-                  : "bg-zinc-900 text-zinc-500 border-zinc-800 hover:text-zinc-300"
+                  : "bg-surface text-fg0 border-border hover:text-fg-muted"
               }`}
             >
               {t.label}

@@ -17,14 +17,14 @@ export default function DriftHistoryPanel({ history, onRescan, role, connectionI
   const canRescan = role === "admin" || role === "analyst";
 
   return (
-    <div className="border border-zinc-800 rounded-lg bg-zinc-900/40 p-4">
+    <div className="border border-border rounded-lg bg-surface-elevated p-4">
       <div className="flex items-center justify-between mb-3">
-        <h4 className="text-sm font-semibold text-zinc-200">Drift history</h4>
+        <h4 className="text-sm font-semibold text-fg-muted">Drift history</h4>
         {canRescan && (
           <button
             type="button"
             onClick={onRescan}
-            className="px-3 py-1.5 text-xs font-semibold text-zinc-300 border border-zinc-700 rounded-lg hover:bg-zinc-800/60"
+            className="px-3 py-1.5 text-xs font-semibold text-fg-muted border border-border-strong rounded-lg hover:bg-surface-overlay"
           >
             Re-scan for drift
           </button>
@@ -32,7 +32,7 @@ export default function DriftHistoryPanel({ history, onRescan, role, connectionI
       </div>
 
       {!history || history.snapshots.length === 0 ? (
-        <p className="text-xs text-zinc-500">No schema snapshots yet — drift detection runs periodically, or trigger a re-scan.</p>
+        <p className="text-xs text-fg0">No schema snapshots yet — drift detection runs periodically, or trigger a re-scan.</p>
       ) : (
         <ul className="flex flex-col gap-2">
           {history.snapshots.map((s) => (
@@ -42,7 +42,7 @@ export default function DriftHistoryPanel({ history, onRescan, role, connectionI
                 "text-xs rounded-lg px-3 py-2 border",
                 s.drift_event
                   ? "bg-amber-500/10 border-amber-500/20 text-amber-200"
-                  : "bg-zinc-800/40 border-zinc-800 text-zinc-400",
+                  : "bg-surface-overlay border-border text-fg-subtle",
               )}
             >
               <div className="flex items-center justify-between">

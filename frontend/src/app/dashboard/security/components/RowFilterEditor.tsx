@@ -112,19 +112,19 @@ export default function RowFilterEditor({
   const connectionName = (id: number) => connections.find((c) => c.id === id)?.name ?? `#${id}`;
 
   if (loading) {
-    return <div className="h-48 rounded-xl bg-zinc-900/40 border border-zinc-800 animate-pulse" />;
+    return <div className="h-48 rounded-xl bg-surface-elevated border border-border animate-pulse" />;
   }
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex justify-between items-center">
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-fg0">
           Restricts which rows a role sees — ANDed onto any filters a user applies themselves in Visualize.
         </p>
         {canManage && !formOpen && (
           <button
             onClick={() => setFormOpen(true)}
-            className="px-3 py-1.5 text-xs font-semibold text-zinc-950 bg-white rounded-lg hover:bg-zinc-200 shrink-0"
+            className="px-3 py-1.5 text-xs font-semibold text-fg bg-white rounded-lg hover:bg-surface shrink-0"
           >
             + New Row Filter
           </button>
@@ -137,7 +137,7 @@ export default function RowFilterEditor({
             <select
               value={connectionId}
               onChange={(e) => { setConnectionId(e.target.value ? Number(e.target.value) : ""); setTableName(""); }}
-              className="px-3 py-2 text-sm rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-200"
+              className="px-3 py-2 text-sm rounded-lg bg-background border border-border-strong text-fg-muted"
             >
               <option value="">Connection...</option>
               {connections.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -146,7 +146,7 @@ export default function RowFilterEditor({
               <select
                 value={tableName}
                 onChange={(e) => setTableName(e.target.value)}
-                className="px-3 py-2 text-sm rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-200"
+                className="px-3 py-2 text-sm rounded-lg bg-background border border-border-strong text-fg-muted"
               >
                 <option value="">Table...</option>
                 {tables.map((t) => <option key={t.table_name} value={t.table_name}>{t.table_name}</option>)}
@@ -156,7 +156,7 @@ export default function RowFilterEditor({
                 value={tableName}
                 onChange={(e) => setTableName(e.target.value)}
                 placeholder="Table name (not yet scanned)"
-                className="px-3 py-2 text-sm rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-200"
+                className="px-3 py-2 text-sm rounded-lg bg-background border border-border-strong text-fg-muted"
               />
             )}
           </div>
@@ -168,7 +168,7 @@ export default function RowFilterEditor({
                   <select
                     value={cond.logic}
                     onChange={(e) => updateCondition(idx, { logic: e.target.value as "AND" | "OR" })}
-                    className="px-2 py-1.5 text-xs rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-400 w-16"
+                    className="px-2 py-1.5 text-xs rounded-lg bg-background border border-border-strong text-fg-subtle w-16"
                   >
                     <option value="AND">AND</option>
                     <option value="OR">OR</option>
@@ -178,7 +178,7 @@ export default function RowFilterEditor({
                   <select
                     value={cond.field}
                     onChange={(e) => updateCondition(idx, { field: e.target.value })}
-                    className="px-2 py-1.5 text-xs rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-200 flex-1"
+                    className="px-2 py-1.5 text-xs rounded-lg bg-background border border-border-strong text-fg-muted flex-1"
                   >
                     <option value="">field...</option>
                     {selectedTable.columns.map((c) => <option key={c.column_name} value={c.column_name}>{c.column_name}</option>)}
@@ -188,13 +188,13 @@ export default function RowFilterEditor({
                     value={cond.field}
                     onChange={(e) => updateCondition(idx, { field: e.target.value })}
                     placeholder="field"
-                    className="px-2 py-1.5 text-xs rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-200 flex-1"
+                    className="px-2 py-1.5 text-xs rounded-lg bg-background border border-border-strong text-fg-muted flex-1"
                   />
                 )}
                 <select
                   value={cond.operator}
                   onChange={(e) => updateCondition(idx, { operator: e.target.value as FilterOperator })}
-                  className="px-2 py-1.5 text-xs rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-200 w-24"
+                  className="px-2 py-1.5 text-xs rounded-lg bg-background border border-border-strong text-fg-muted w-24"
                 >
                   {FILTER_OPERATORS.map((op) => <option key={op} value={op}>{op}</option>)}
                 </select>
@@ -206,7 +206,7 @@ export default function RowFilterEditor({
                       : e.target.value,
                   })}
                   placeholder={cond.operator === "in" || cond.operator === "not in" ? "v1,v2,v3" : "value"}
-                  className="px-2 py-1.5 text-xs rounded-lg bg-zinc-950 border border-zinc-700 text-zinc-200 flex-1"
+                  className="px-2 py-1.5 text-xs rounded-lg bg-background border border-border-strong text-fg-muted flex-1"
                 />
                 {conditions.length > 1 && (
                   <button onClick={() => removeCondition(idx)} className="text-xs text-red-400 hover:text-red-300">✕</button>
@@ -217,12 +217,12 @@ export default function RowFilterEditor({
           </div>
 
           <div className="flex items-center gap-2">
-            <label className="text-xs text-zinc-500">Applies to roles:</label>
+            <label className="text-xs text-fg0">Applies to roles:</label>
             {roles.filter((r) => r.is_active).map((r) => (
               <button
                 key={r.id}
                 onClick={() => toggleRole(r.name)}
-                className={`text-xs px-2 py-1 rounded-full border ${appliesToRoles.has(r.name) ? roleColor(r.name) : "border-zinc-700 text-zinc-600"}`}
+                className={`text-xs px-2 py-1 rounded-full border ${appliesToRoles.has(r.name) ? roleColor(r.name) : "border-border-strong text-fg-subtle"}`}
               >
                 {r.name}
               </button>
@@ -233,7 +233,7 @@ export default function RowFilterEditor({
             {previewLoading ? "Loading preview..." : "Preview row count impact"}
           </button>
           {rowCounts && (
-            <p className="text-xs text-zinc-400">
+            <p className="text-xs text-fg-subtle">
               {rowCounts.before} row(s) unfiltered → <span className="text-emerald-400">{rowCounts.after} row(s)</span> after this filter (equality conditions only in preview)
             </p>
           )}
@@ -246,7 +246,7 @@ export default function RowFilterEditor({
             >
               Save Filter
             </button>
-            <button onClick={() => setFormOpen(false)} className="px-3 py-1.5 text-xs font-semibold text-zinc-400 bg-zinc-800 hover:bg-zinc-700 rounded-lg">
+            <button onClick={() => setFormOpen(false)} className="px-3 py-1.5 text-xs font-semibold text-fg-subtle bg-surface-overlay hover:bg-surface-overlay rounded-lg">
               Cancel
             </button>
           </div>
@@ -254,16 +254,16 @@ export default function RowFilterEditor({
       )}
 
       {policies.length === 0 ? (
-        <div className="p-6 text-center text-sm text-zinc-500 rounded-xl border border-zinc-800 bg-zinc-900/30">
+        <div className="p-6 text-center text-sm text-fg0 rounded-xl border border-border bg-surface-elevated">
           No row access filters defined.
         </div>
       ) : (
         <div className="flex flex-col gap-2">
           {policies.map((p) => (
-            <div key={p.id} className="p-3 rounded-xl border border-zinc-800 bg-zinc-900/30 flex items-center justify-between gap-4">
+            <div key={p.id} className="p-3 rounded-xl border border-border bg-surface-elevated flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm text-zinc-200 font-mono">{connectionName(p.connection_id)} · {p.table_name}</p>
-                <p className="text-xs text-zinc-500">
+                <p className="text-sm text-fg-muted font-mono">{connectionName(p.connection_id)} · {p.table_name}</p>
+                <p className="text-xs text-fg0">
                   {p.filter_conditions.map((c, i) => `${i > 0 ? ` ${c.logic ?? "AND"} ` : ""}${c.field} ${c.operator} ${Array.isArray(c.value) ? `(${c.value.join(", ")})` : c.value}`).join("")}
                   {" — applies to: "}{p.applies_to_roles.join(", ") || "none"}
                 </p>

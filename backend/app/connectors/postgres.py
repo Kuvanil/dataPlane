@@ -170,5 +170,6 @@ class PostgresConnector(BaseConnector):
             max_value=str(max_val) if max_val is not None else None,
             sample_values=sample,
             sample_size_used=len(sample),
+            row_count=total,
             error=error,
         )

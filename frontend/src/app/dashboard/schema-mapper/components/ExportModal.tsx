@@ -60,14 +60,14 @@ export default function ExportModal({
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="w-full max-w-3xl max-h-[85vh] flex flex-col rounded-xl bg-zinc-900 border border-zinc-800 shadow-2xl">
-        <div className="flex items-center justify-between px-5 py-3 border-b border-zinc-800">
+      <div className="w-full max-w-3xl max-h-[85vh] flex flex-col rounded-xl bg-surface border border-border shadow-2xl">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-border">
           <div>
-            <h2 className="text-base font-semibold text-zinc-100">
+            <h2 className="text-base font-semibold text-fg">
               Export Published Artifact
             </h2>
             {artifact && (
-              <p className="text-[11px] text-zinc-500 mt-0.5">
+              <p className="text-[11px] text-fg0 mt-0.5">
                 {artifact.name} · v{artifact.version} ·{" "}
                 {formatTimestamp(artifact.published_at)} by {artifact.published_by}
               </p>
@@ -76,7 +76,7 @@ export default function ExportModal({
           <button
             type="button"
             onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-200 text-sm"
+            className="text-fg0 hover:text-fg-muted text-sm"
             aria-label="Close"
           >
             ✕
@@ -84,34 +84,34 @@ export default function ExportModal({
         </div>
 
         {loading || !artifact ? (
-          <div className="flex-1 flex items-center justify-center text-sm text-zinc-500">
+          <div className="flex-1 flex items-center justify-center text-sm text-fg0">
             Loading artifact…
           </div>
         ) : (
           <>
-            <div className="px-5 py-2 border-b border-zinc-800 text-[11px] text-zinc-500 flex flex-wrap items-center gap-3">
+            <div className="px-5 py-2 border-b border-border text-[11px] text-fg0 flex flex-wrap items-center gap-3">
               <span>
-                <span className="text-zinc-600">Source:</span>{" "}
+                <span className="text-fg-subtle">Source:</span>{" "}
                 {artifact.source.name ?? "—"} ({artifact.source.type})
               </span>
               <span>
-                <span className="text-zinc-600">Target:</span>{" "}
+                <span className="text-fg-subtle">Target:</span>{" "}
                 {artifact.target.name ?? "—"} ({artifact.target.type})
               </span>
               <span>
-                <span className="text-zinc-600">Fields:</span>{" "}
+                <span className="text-fg-subtle">Fields:</span>{" "}
                 {artifact.field_mappings.length}
               </span>
             </div>
             <div className="flex-1 overflow-y-auto p-4">
               <pre
-                className="text-[11px] font-mono text-zinc-200 bg-zinc-950/60 border border-zinc-800 rounded-lg p-3 whitespace-pre overflow-x-auto"
+                className="text-[11px] font-mono text-fg-muted bg-background/60 border border-border rounded-lg p-3 whitespace-pre overflow-x-auto"
                 aria-label="Mapping JSON"
               >
                 {json}
               </pre>
             </div>
-            <div className="px-5 py-3 border-t border-zinc-800 flex items-center justify-end gap-2">
+            <div className="px-5 py-3 border-t border-border flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={copy}
@@ -119,7 +119,7 @@ export default function ExportModal({
                   "px-3 py-1.5 text-xs font-semibold rounded-lg",
                   copied
                     ? "bg-emerald-500/15 text-emerald-300 border border-emerald-500/30"
-                    : "bg-zinc-800 text-zinc-200 border border-zinc-700 hover:bg-zinc-700",
+                    : "bg-surface-overlay text-fg-muted border border-border-strong hover:bg-surface-overlay",
                 )}
               >
                 {copied ? "✓ Copied" : "Copy"}

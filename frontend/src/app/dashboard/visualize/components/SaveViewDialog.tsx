@@ -33,12 +33,12 @@ export default function SaveViewDialog({ savedViews, onSave, onLoad, onDelete, c
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="px-3 py-2 text-xs font-semibold text-zinc-300 border border-zinc-700 rounded-lg hover:bg-zinc-800/60"
+        className="px-3 py-2 text-xs font-semibold text-fg-muted border border-border-strong rounded-lg hover:bg-surface-overlay"
       >
         Views {savedViews.length > 0 ? `(${savedViews.length})` : ""}
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 w-72 rounded-xl bg-zinc-900 border border-zinc-800 shadow-2xl z-40 p-3">
+        <div className="absolute right-0 mt-2 w-72 rounded-xl bg-surface border border-border shadow-2xl z-40 p-3">
           {canSave && (
             <div className="flex items-center gap-2 mb-3">
               <input
@@ -46,7 +46,7 @@ export default function SaveViewDialog({ savedViews, onSave, onLoad, onDelete, c
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Save current view as…"
-                className="flex-1 px-2 py-1.5 text-xs rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200"
+                className="flex-1 px-2 py-1.5 text-xs rounded-lg bg-surface-overlay border border-border-strong text-fg-muted"
               />
               <button
                 type="button"
@@ -60,15 +60,15 @@ export default function SaveViewDialog({ savedViews, onSave, onLoad, onDelete, c
           )}
           <div className="flex flex-col gap-1 max-h-64 overflow-y-auto">
             {savedViews.length === 0 ? (
-              <p className="text-[11px] text-zinc-500 text-center py-3">No saved views yet.</p>
+              <p className="text-[11px] text-fg0 text-center py-3">No saved views yet.</p>
             ) : (
               savedViews.map((v) => (
-                <div key={v.id} className="flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-zinc-800/50 text-xs">
-                  <button type="button" onClick={() => { onLoad(v); setOpen(false); }} className="flex-1 text-left text-zinc-300">
-                    {v.name} <span className="text-zinc-600">· {v.chart_type}</span>
+                <div key={v.id} className="flex items-center justify-between px-2 py-1.5 rounded-lg hover:bg-surface-overlay text-xs">
+                  <button type="button" onClick={() => { onLoad(v); setOpen(false); }} className="flex-1 text-left text-fg-muted">
+                    {v.name} <span className="text-fg-subtle">· {v.chart_type}</span>
                   </button>
                   {canSave && (
-                    <button type="button" onClick={() => onDelete(v.id)} aria-label="Delete view" className="text-zinc-500 hover:text-red-400 px-1">
+                    <button type="button" onClick={() => onDelete(v.id)} aria-label="Delete view" className="text-fg0 hover:text-red-400 px-1">
                       ✕
                     </button>
                   )}

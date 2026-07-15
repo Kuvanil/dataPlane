@@ -44,5 +44,5 @@ export function maskingTypeLabel(type: string): string {
 export function actionColor(action: string): string {
   if (action === "delete" || action === "admin") return "text-red-300";
   if (action === "edit" || action === "create" || action === "publish") return "text-amber-300";
-  return "text-zinc-400";
+  return "text-fg-subtle";
 }

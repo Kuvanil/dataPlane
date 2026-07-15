@@ -86,7 +86,7 @@ export function ActivityFeed({
             <>
               <span
                 className={`w-8 h-8 shrink-0 rounded-full flex items-center justify-center text-sm ${
-                  isFailure ? "bg-red-500/10" : "bg-zinc-800/80"
+                  isFailure ? "bg-red-500/10" : "bg-surface-overlay"
                 }`}
                 role="img"
                 aria-hidden="true"
@@ -94,10 +94,10 @@ export function ActivityFeed({
                 {meta.icon}
               </span>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-zinc-200 truncate">
+                <p className="text-sm font-medium text-fg-muted truncate">
                   {item.summary || meta.label}
                 </p>
-                <p className="text-xs text-zinc-500 truncate">
+                <p className="text-xs text-fg0 truncate">
                   {item.actor} · {formatRelativeTime(item.created_at)}
                 </p>
               </div>
@@ -109,12 +109,12 @@ export function ActivityFeed({
           const rowClass = `flex items-center gap-3 p-3 rounded-xl border transition-colors ${
             isFailure
               ? "bg-red-500/5 border-red-500/10"
-              : "bg-zinc-800/30 border-zinc-800/50"
+              : "bg-surface-overlay border-border/50"
           }`;
           return (
             <li key={item.id}>
               {item.link_url ? (
-                <Link href={item.link_url} className={`${rowClass} hover:bg-zinc-800/60`}>
+                <Link href={item.link_url} className={`${rowClass} hover:bg-surface-overlay`}>
                   {row}
                 </Link>
               ) : (

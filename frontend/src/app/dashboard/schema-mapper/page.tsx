@@ -105,10 +105,10 @@ export default function SchemaMapperPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="p-4 border-b border-zinc-800 bg-zinc-900/40 backdrop-blur-sm flex flex-wrap justify-between items-center gap-3">
+      <div className="p-4 border-b border-border bg-surface-elevated backdrop-blur-sm flex flex-wrap justify-between items-center gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-zinc-200">Schema Mapper</h3>
-          <p className="text-xs text-zinc-500">
+          <h3 className="text-lg font-semibold text-fg-muted">Schema Mapper</h3>
+          <p className="text-xs text-fg0">
             Visual drag-and-drop with versioned, audited mappings
           </p>
         </div>
@@ -128,11 +128,11 @@ export default function SchemaMapperPage() {
           <div className="flex-1 flex items-center justify-center p-10">
             <div className="max-w-md text-center">
               <div className="text-5xl mb-3">🗺️</div>
-              <h2 className="text-lg font-semibold text-zinc-200 mb-2">
+              <h2 className="text-lg font-semibold text-fg-muted mb-2">
                 {selectedId === null ? "Select or create a mapping" : "Loading mapping…"}
               </h2>
-              <p className="text-sm text-zinc-500">
-                Pick a draft from the list, or click <span className="text-zinc-300">+ New</span> to start one.
+              <p className="text-sm text-fg0">
+                Pick a draft from the list, or click <span className="text-fg-muted">+ New</span> to start one.
               </p>
             </div>
           </div>

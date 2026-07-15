@@ -33,6 +33,8 @@ from app.api.routers import roles as roles_router
 from app.api.routers import users_admin as users_admin_router
 from app.api.routers import policies as policies_router
 from app.api.routers import authz as authz_router
+from app.api.routers import agentic_dba as agentic_dba_router
+from app.api.routers import integrations as integrations_router
 from app.core.celery_app import celery_app  # noqa: F401  (registers tasks on import)
 from app.core.audit_guard import install_audit_append_only_guard
 from app.core.config import settings
@@ -57,6 +59,9 @@ from app.models.saved_query import SavedQuery  # noqa: F401
 from app.models.security import (  # noqa: F401
     Role, Permission, RolePermission, UserRole, MaskingPolicy, RowAccessPolicy,
 )
+from app.models.schema_design_plan import SchemaDesignPlan  # noqa: F401
+from app.models.notification_setting import NotificationSetting  # noqa: F401
+from app.models.connection_secret import ConnectionSecret  # noqa: F401
 
 # ── Structured logging setup ──────────────────────────────────────────────────
 logging.config.dictConfig({
@@ -1129,6 +1134,8 @@ app.include_router(roles_router.router, prefix="/api/v1/roles", tags=["Security 
 app.include_router(users_admin_router.router, prefix="/api/v1/users", tags=["Security — Users"])
 app.include_router(policies_router.router, prefix="/api/v1/policies", tags=["Security — Policies"])
 app.include_router(authz_router.router, prefix="/api/v1/authz", tags=["Security — AuthZ"])
+app.include_router(agentic_dba_router.router, prefix="/api/v1/agentic-dba", tags=["Agentic DBA Copilot"])
+app.include_router(integrations_router.router, prefix="/api/v1/integrations", tags=["Integrations (ACI)"])
 
 
 @app.get("/health")

@@ -46,8 +46,50 @@ class Settings(BaseSettings):
     SCHEMA_INTEL_SAMPLE_LIMIT: int = 1000
     SCHEMA_INTEL_MAX_DISTINCT_SCAN_ROWS: int = 100000
     SCHEMA_INTEL_USE_SEPARATE_CREDENTIALS: bool = False
+    # Profiling enrichment bounds (agentic_dba_tasks #2) — FK-candidate
+    # inference compares only against declared PK columns, capped:
+    SCHEMA_INTEL_FK_MAX_TABLES: int = 25
+    SCHEMA_INTEL_FK_PK_VALUE_LIMIT: int = 10000
+    SCHEMA_INTEL_FK_MIN_OVERLAP: float = 0.5
 
     RBAC_PERMISSION_CACHE_TTL_SECONDS: int = 30
+
+    # Agentic DBA Copilot (agentic_dba_tasks #3) — sanity caps on plan size
+    # (design decision #11) and an LLM-adaptation kill switch.
+    AGENTIC_DBA_MAX_TABLES: int = 10
+    AGENTIC_DBA_MAX_COLUMNS_PER_TABLE: int = 30
+    AGENTIC_DBA_LLM_ENABLED: bool = True
+
+    # ACI.dev external tool-calling integration (aci_integration_tasks).
+    # ACI_API_KEY deliberately has no checked-in fallback — unset means the
+    # integration is disabled and every ACI call fails with a clear
+    # "not configured" error instead of a mystery auth failure.
+    ACI_BASE_URL: str = "http://aci:8000"
+    ACI_API_KEY: str | None = None
+    ACI_PORTAL_URL: str = "http://localhost:3001"
+    ACI_LINKED_ACCOUNT_OWNER_ID: str = "dataplane"
+    ACI_TIMEOUT: int = 10
+    ACI_MAX_RETRIES: int = 2
+    # Fixed, admin-configured destination for the ONLY auto-capable external
+    # action (notify_slack_internal). Never user/LLM-suppliable at request
+    # time — the destination is part of the risk (aci tasks #3).
+    ACI_SLACK_INTERNAL_CHANNEL: str = ""
+    # Base URL used in notify-out links back to dataPlane's own approval UI.
+    DATAPLANE_BASE_URL: str = "http://localhost:3000"
+
+    # Connector credential vaulting (keeperdb_integration_tasks; resolves
+    # connector_tasks #2's blocked decision — repo owner chose BOTH backends,
+    # aes256 default, 2026-07-14). Unset key/config = legacy mode: secrets
+    # stay in the config column, responses stay redacted, nothing breaks.
+    SECRET_MANAGER_BACKEND: str = "aes256"  # "aes256" | "keeper"
+    # base64-encoded 32-byte key; generate: openssl rand -base64 32
+    SECRETS_ENCRYPTION_KEY: str | None = None
+    # Set only during a key-rotation window so old rows stay readable.
+    SECRETS_ENCRYPTION_KEY_PREVIOUS: str | None = None
+    # Keeper Secrets Manager: path to the config file produced by the
+    # one-time-token bootstrap. A mounted file — NEVER a literal token.
+    KSM_CONFIG_PATH: str | None = None
+    KSM_FOLDER_UID: str = ""
 
     class Config:
         env_file = ".env"

@@ -69,10 +69,10 @@ export default function CredentialRotationModal({ connector, onClose, onRotated 
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
-      <div className="w-full max-w-md p-6 rounded-2xl bg-zinc-900 border border-zinc-800 flex flex-col gap-4 shadow-2xl">
-        <h3 className="text-lg font-semibold text-zinc-200">Rotate Credentials</h3>
-        <p className="text-xs text-zinc-500">
-          Update credentials for <span className="font-semibold text-zinc-300">{connector.name}</span>.
+      <div className="w-full max-w-md p-6 rounded-2xl bg-surface border border-border flex flex-col gap-4 shadow-2xl">
+        <h3 className="text-lg font-semibold text-fg-muted">Rotate Credentials</h3>
+        <p className="text-xs text-fg0">
+          Update credentials for <span className="font-semibold text-fg-muted">{connector.name}</span>.
           Existing credentials will be replaced. New values are never displayed after saving.
         </p>
 
@@ -81,13 +81,13 @@ export default function CredentialRotationModal({ connector, onClose, onRotated 
         )}
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-zinc-400">New credentials (JSON)</label>
+          <label className="text-xs text-fg-subtle">New credentials (JSON)</label>
           <textarea
             value={newSecret}
             onChange={e => setNewSecret(e.target.value)}
             rows={4}
             placeholder='{"password": "new_secret_value", "api_key": "new_key"}'
-            className="px-3 py-2 font-mono text-xs rounded-lg bg-zinc-800 border border-zinc-700 focus:outline-none focus:border-blue-500 text-zinc-300"
+            className="px-3 py-2 font-mono text-xs rounded-lg bg-surface-overlay border border-border-strong focus:outline-none focus:border-blue-500 text-fg-muted"
           />
         </div>
 
@@ -106,7 +106,7 @@ export default function CredentialRotationModal({ connector, onClose, onRotated 
           <button
             onClick={handleTest}
             disabled={testing || !newSecret.trim()}
-            className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-semibold text-zinc-300 disabled:opacity-50"
+            className="flex-1 py-2 bg-surface-overlay hover:bg-surface-overlay rounded-xl text-sm font-semibold text-fg-muted disabled:opacity-50"
           >
             {testing ? "Testing..." : "Test New Credentials"}
           </button>
@@ -121,7 +121,7 @@ export default function CredentialRotationModal({ connector, onClose, onRotated 
 
         <button
           onClick={onClose}
-          className="w-full py-2 text-xs text-zinc-500 hover:text-zinc-300"
+          className="w-full py-2 text-xs text-fg0 hover:text-fg-muted"
         >
           Cancel
         </button>

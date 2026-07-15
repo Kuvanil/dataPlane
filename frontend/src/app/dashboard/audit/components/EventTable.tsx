@@ -33,11 +33,11 @@ export default function EventTable({
   selectedId: number | null;
 }) {
   if (isLoading) {
-    return <div className="p-8 text-center text-zinc-500 text-sm">Loading audit events…</div>;
+    return <div className="p-8 text-center text-fg0 text-sm">Loading audit events…</div>;
   }
   if (events.length === 0) {
     return (
-      <div className="p-8 text-center text-zinc-500 text-sm">
+      <div className="p-8 text-center text-fg0 text-sm">
         No audit events match the current filters.
       </div>
     );
@@ -46,12 +46,12 @@ export default function EventTable({
   return (
     <table className="w-full text-sm">
       <thead>
-        <tr className="border-b border-zinc-800 text-zinc-400 text-left text-xs">
+        <tr className="border-b border-border text-fg-subtle text-left text-xs">
           {COLUMNS.map((col) => (
             <th key={col.key} className="p-4">
               <button
                 onClick={() => onSort(col.key)}
-                className="flex items-center gap-1 hover:text-zinc-200"
+                className="flex items-center gap-1 hover:text-fg-muted"
               >
                 {col.label}
                 {sortBy === col.key && <span>{sortOrder === "asc" ? "▲" : "▼"}</span>}
@@ -67,25 +67,25 @@ export default function EventTable({
           <tr
             key={ev.id}
             onClick={() => onSelect(ev)}
-            className={`border-b border-zinc-800/50 hover:bg-zinc-800/30 cursor-pointer transition-colors ${
-              selectedId === ev.id ? "bg-zinc-800/50" : ""
+            className={`border-b border-border/50 hover:bg-surface-overlay cursor-pointer transition-colors ${
+              selectedId === ev.id ? "bg-surface-overlay" : ""
             }`}
           >
-            <td className="p-4 text-zinc-400 font-mono text-xs whitespace-nowrap">
+            <td className="p-4 text-fg-subtle font-mono text-xs whitespace-nowrap">
               {new Date(ev.created_at).toLocaleString()}
             </td>
-            <td className="p-4 text-zinc-200 font-medium">{ev.event_type}</td>
-            <td className="p-4 text-zinc-400">{ev.module ?? "—"}</td>
-            <td className="p-4 text-zinc-500 text-xs">{ev.actor}</td>
+            <td className="p-4 text-fg-muted font-medium">{ev.event_type}</td>
+            <td className="p-4 text-fg-subtle">{ev.module ?? "—"}</td>
+            <td className="p-4 text-fg0 text-xs">{ev.actor}</td>
             <td className="p-4">
               <span className={`px-2 py-0.5 rounded-full text-xs border ${STATUS_STYLES[ev.outcome] ?? ""}`}>
                 {ev.outcome}
               </span>
             </td>
-            <td className="p-4 text-zinc-400 text-xs">
+            <td className="p-4 text-fg-subtle text-xs">
               {ev.target_name ?? ev.target_type ?? "—"}
             </td>
-            <td className="p-4 text-zinc-400 text-xs max-w-xs truncate">{ev.summary ?? "—"}</td>
+            <td className="p-4 text-fg-subtle text-xs max-w-xs truncate">{ev.summary ?? "—"}</td>
           </tr>
         ))}
       </tbody>

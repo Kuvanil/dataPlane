@@ -21,6 +21,8 @@ celery_app = Celery(
         "app.tasks.autopilot_tasks",
         "app.tasks.audit_tasks",
         "app.tasks.schema_intel_tasks",
+        "app.tasks.agentic_dba_tasks",
+        "app.tasks.aci_tasks",
         "app.workers.mapping_tasks",
         "app.workers.pipeline_tasks",
     ],

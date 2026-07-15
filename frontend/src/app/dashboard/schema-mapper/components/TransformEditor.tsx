@@ -49,20 +49,20 @@ export default function TransformEditor({
         if (e.target === e.currentTarget) onCancel();
       }}
     >
-      <div className="w-full max-w-2xl rounded-xl bg-zinc-900 border border-zinc-800 p-6 shadow-2xl">
+      <div className="w-full max-w-2xl rounded-xl bg-surface border border-border p-6 shadow-2xl">
         <div className="flex items-start justify-between">
           <div>
-            <h2 className="text-lg font-semibold text-zinc-100">
+            <h2 className="text-lg font-semibold text-fg">
               Edit Transformation
             </h2>
-            <p className="text-xs text-zinc-500 mt-1">
+            <p className="text-xs text-fg0 mt-1">
               {desc.summary}
             </p>
           </div>
           <button
             type="button"
             onClick={onCancel}
-            className="text-zinc-500 hover:text-zinc-200 text-sm"
+            className="text-fg0 hover:text-fg-muted text-sm"
             aria-label="Close"
           >
             ✕
@@ -70,12 +70,12 @@ export default function TransformEditor({
         </div>
 
         <div className="mt-5">
-          <label className="text-xs text-zinc-400">
+          <label className="text-xs text-fg-subtle">
             Kind
             <select
               value={kind}
               onChange={(e) => setKind(e.target.value as TransformationKind)}
-              className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-100 focus:outline-none focus:border-blue-500"
+              className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm text-fg focus:outline-none focus:border-blue-500"
             >
               {TRANSFORMATION_KINDS.map((k) => (
                 <option key={k} value={k}>
@@ -109,7 +109,7 @@ export default function TransformEditor({
           <button
             type="button"
             onClick={onCancel}
-            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 rounded-lg"
+            className="px-4 py-2 text-sm text-fg-subtle hover:text-fg-muted rounded-lg"
           >
             Cancel
           </button>
@@ -120,7 +120,7 @@ export default function TransformEditor({
             className={classNames(
               "px-4 py-2 text-sm font-semibold rounded-lg",
               issues.length > 0
-                ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
+                ? "bg-surface-overlay text-fg-subtle cursor-not-allowed"
                 : "bg-gradient-to-r from-blue-500 to-indigo-600 text-white hover:opacity-90",
             )}
           >
@@ -147,7 +147,7 @@ function KindFields({
 
   if (kind === "direct" || kind === "upper" || kind === "lower" || kind === "trim") {
     return (
-      <div className="text-xs text-zinc-500 italic px-3 py-2 rounded bg-zinc-950/50 border border-zinc-800">
+      <div className="text-xs text-fg0 italic px-3 py-2 rounded bg-background/50 border border-border">
         No parameters — this kind applies the operation to the source column directly.
       </div>
     );
@@ -157,24 +157,24 @@ function KindFields({
     const p = payload as Extract<TransformationPayload, { kind: "cast" }>;
     return (
       <div className="grid grid-cols-2 gap-3">
-        <label className="text-xs text-zinc-400">
+        <label className="text-xs text-fg-subtle">
           From type
           <input
             type="text"
             value={p.from}
             onChange={(e) => set("from", e.target.value)}
             placeholder="TEXT"
-            className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-mono"
+            className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm font-mono"
           />
         </label>
-        <label className="text-xs text-zinc-400">
+        <label className="text-xs text-fg-subtle">
           To type
           <input
             type="text"
             value={p.to}
             onChange={(e) => set("to", e.target.value)}
             placeholder="INTEGER"
-            className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-mono"
+            className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm font-mono"
           />
         </label>
       </div>
@@ -185,7 +185,7 @@ function KindFields({
     const p = payload as Extract<TransformationPayload, { kind: "concat" }>;
     return (
       <div className="space-y-2">
-        <div className="text-xs text-zinc-400">Parts (in order)</div>
+        <div className="text-xs text-fg-subtle">Parts (in order)</div>
         {p.parts.map((part, i) => (
           <div key={i} className="flex items-center gap-2">
             <select
@@ -199,7 +199,7 @@ function KindFields({
                     : { kind: "source" };
                 onChange({ ...payload, parts: next } as TransformationPayload);
               }}
-              className="px-2 py-1.5 rounded bg-zinc-800 border border-zinc-700 text-xs"
+              className="px-2 py-1.5 rounded bg-surface-overlay border border-border-strong text-xs"
             >
               <option value="literal">literal</option>
               <option value="source">source</option>
@@ -214,10 +214,10 @@ function KindFields({
                   onChange({ ...payload, parts: next } as TransformationPayload);
                 }}
                 placeholder="literal text"
-                className="flex-1 px-3 py-1.5 rounded bg-zinc-800 border border-zinc-700 text-sm font-mono"
+                className="flex-1 px-3 py-1.5 rounded bg-surface-overlay border border-border-strong text-sm font-mono"
               />
             ) : (
-              <span className="flex-1 text-xs text-zinc-500 italic">
+              <span className="flex-1 text-xs text-fg0 italic">
                 uses the N-th source column (position {i} in parts)
               </span>
             )}
@@ -227,7 +227,7 @@ function KindFields({
                 const next = p.parts.filter((_, idx) => idx !== i);
                 onChange({ ...payload, parts: next } as TransformationPayload);
               }}
-              className="px-2 py-1 text-xs text-zinc-500 hover:text-red-400"
+              className="px-2 py-1 text-xs text-fg0 hover:text-red-400"
               aria-label="Remove part"
             >
               ✕
@@ -252,34 +252,34 @@ function KindFields({
     const p = payload as Extract<TransformationPayload, { kind: "substring" }>;
     return (
       <div className="grid grid-cols-3 gap-3">
-        <label className="text-xs text-zinc-400">
+        <label className="text-xs text-fg-subtle">
           Source index
           <input
             type="number"
             min={0}
             value={p.source_index}
             onChange={(e) => set("source_index", Number(e.target.value))}
-            className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-mono"
+            className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm font-mono"
           />
         </label>
-        <label className="text-xs text-zinc-400">
+        <label className="text-xs text-fg-subtle">
           Start (0-based)
           <input
             type="number"
             min={0}
             value={p.start}
             onChange={(e) => set("start", Number(e.target.value))}
-            className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-mono"
+            className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm font-mono"
           />
         </label>
-        <label className="text-xs text-zinc-400">
+        <label className="text-xs text-fg-subtle">
           Length
           <input
             type="number"
             min={1}
             value={p.length}
             onChange={(e) => set("length", Number(e.target.value))}
-            className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-mono"
+            className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm font-mono"
           />
         </label>
       </div>
@@ -289,14 +289,14 @@ function KindFields({
   if (kind === "coalesce") {
     const p = payload as Extract<TransformationPayload, { kind: "coalesce" }>;
     return (
-      <label className="text-xs text-zinc-400">
+      <label className="text-xs text-fg-subtle">
         Fallback value (literal)
         <input
           type="text"
           value={p.fallback_value}
           onChange={(e) => set("fallback_value", e.target.value)}
           placeholder="n/a"
-          className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-mono"
+          className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm font-mono"
         />
       </label>
     );
@@ -305,14 +305,14 @@ function KindFields({
   if (kind === "default") {
     const p = payload as Extract<TransformationPayload, { kind: "default" }>;
     return (
-      <label className="text-xs text-zinc-400">
+      <label className="text-xs text-fg-subtle">
         Default value (literal)
         <input
           type="text"
           value={String(p.value)}
           onChange={(e) => set("value", e.target.value)}
           placeholder="unknown"
-          className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-mono"
+          className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm font-mono"
         />
       </label>
     );
@@ -321,14 +321,14 @@ function KindFields({
   if (kind === "null_if") {
     const p = payload as Extract<TransformationPayload, { kind: "null_if" }>;
     return (
-      <label className="text-xs text-zinc-400">
+      <label className="text-xs text-fg-subtle">
         Equals (literal)
         <input
           type="text"
           value={String(p.equals)}
           onChange={(e) => set("equals", e.target.value)}
           placeholder=""
-          className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-mono"
+          className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm font-mono"
         />
       </label>
     );
@@ -338,44 +338,44 @@ function KindFields({
     const p = payload as Extract<TransformationPayload, { kind: "lookup" }>;
     return (
       <div className="grid grid-cols-2 gap-3">
-        <label className="text-xs text-zinc-400">
+        <label className="text-xs text-fg-subtle">
           Lookup table
           <input
             type="text"
             value={p.table}
             onChange={(e) => set("table", e.target.value)}
             placeholder="lu_country"
-            className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-mono"
+            className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm font-mono"
           />
         </label>
-        <label className="text-xs text-zinc-400">
+        <label className="text-xs text-fg-subtle">
           Key column
           <input
             type="text"
             value={p.key_column}
             onChange={(e) => set("key_column", e.target.value)}
             placeholder="code"
-            className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-mono"
+            className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm font-mono"
           />
         </label>
-        <label className="text-xs text-zinc-400">
+        <label className="text-xs text-fg-subtle">
           Value column
           <input
             type="text"
             value={p.value_column}
             onChange={(e) => set("value_column", e.target.value)}
             placeholder="name"
-            className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-mono"
+            className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm font-mono"
           />
         </label>
-        <label className="text-xs text-zinc-400">
+        <label className="text-xs text-fg-subtle">
           Default (optional)
           <input
             type="text"
             value={p.default ?? ""}
             onChange={(e) => set("default", e.target.value || null)}
             placeholder="UNK"
-            className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm font-mono"
+            className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm font-mono"
           />
         </label>
       </div>

@@ -41,7 +41,7 @@ export const HEALTH_META: Record<string, { label: string; dot: string; text: str
   healthy:  { label: "Healthy",    dot: "bg-emerald-400", text: "text-emerald-400" },
   degraded: { label: "Degraded",   dot: "bg-amber-400",   text: "text-amber-400" },
   down:     { label: "Down",       dot: "bg-rose-400",    text: "text-rose-400" },
-  unknown:  { label: "Not tested", dot: "bg-zinc-500",    text: "text-zinc-400" },
+  unknown:  { label: "Not tested", dot: "bg-surface-overlay",    text: "text-fg-subtle" },
 };
 
 export const TYPE_META: Record<string, { icon: string; color: string; bgColor: string }> = {

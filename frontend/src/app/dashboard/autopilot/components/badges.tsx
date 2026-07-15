@@ -49,14 +49,14 @@ const OUTCOME_STYLES: Record<string, string> = {
   blocked_prohibited: "bg-red-500/15 text-red-300 border-red-500/30",
   blocked_rate_limit: "bg-amber-500/10 text-amber-300 border-amber-500/25",
   blocked_breaker: "bg-amber-500/10 text-amber-300 border-amber-500/25",
-  blocked_policy: "bg-zinc-700/40 text-zinc-300 border-zinc-600",
+  blocked_policy: "bg-surface-overlay text-fg-muted border-border-strong",
 };
 
 export function OutcomeBadge({ outcome }: { outcome: string }): ReactElement {
   return (
     <span
       className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full border ${
-        OUTCOME_STYLES[outcome] ?? "bg-zinc-800 text-zinc-400 border-zinc-700"
+        OUTCOME_STYLES[outcome] ?? "bg-surface-overlay text-fg-subtle border-border-strong"
       }`}
     >
       {outcome.replace(/_/g, " ")}
@@ -69,8 +69,8 @@ const STATUS_STYLES: Record<string, string> = {
   approved: "bg-blue-500/10 text-blue-300 border-blue-500/25",
   executing: "bg-blue-500/10 text-blue-300 border-blue-500/25",
   executed: "bg-emerald-500/10 text-emerald-300 border-emerald-500/25",
-  rejected: "bg-zinc-700/40 text-zinc-400 border-zinc-600",
-  superseded: "bg-zinc-700/40 text-zinc-400 border-zinc-600",
+  rejected: "bg-surface-overlay text-fg-subtle border-border-strong",
+  superseded: "bg-surface-overlay text-fg-subtle border-border-strong",
   failed: "bg-red-500/10 text-red-300 border-red-500/25",
 };
 
@@ -78,7 +78,7 @@ export function StatusBadge({ status }: { status: string }): ReactElement {
   return (
     <span
       className={`text-[10px] font-semibold uppercase px-2 py-0.5 rounded-full border ${
-        STATUS_STYLES[status] ?? "bg-zinc-800 text-zinc-400 border-zinc-700"
+        STATUS_STYLES[status] ?? "bg-surface-overlay text-fg-subtle border-border-strong"
       }`}
     >
       {status}

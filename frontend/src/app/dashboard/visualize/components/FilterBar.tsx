@@ -35,10 +35,10 @@ export default function FilterBar({ columns, filters, onChange }: FilterBarProps
   return (
     <div>
       <div className="flex items-center justify-between mb-1.5">
-        <span className="text-xs text-zinc-400">Filters</span>
+        <span className="text-xs text-fg-subtle">Filters</span>
         <div className="flex items-center gap-2">
           {filters.length > 0 && (
-            <button type="button" onClick={() => onChange([])} className="text-[11px] text-zinc-500 hover:text-zinc-300">
+            <button type="button" onClick={() => onChange([])} className="text-[11px] text-fg0 hover:text-fg-muted">
               Clear all
             </button>
           )}
@@ -53,14 +53,14 @@ export default function FilterBar({ columns, filters, onChange }: FilterBarProps
             <select
               value={f.field}
               onChange={(e) => updateFilter(i, { field: e.target.value })}
-              className="px-2 py-1.5 text-xs rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200"
+              className="px-2 py-1.5 text-xs rounded-lg bg-surface-overlay border border-border-strong text-fg-muted"
             >
               {columns.map((c) => <option key={c.id} value={c.column_name}>{c.column_name}</option>)}
             </select>
             <select
               value={f.operator}
               onChange={(e) => updateFilter(i, { operator: e.target.value as FilterOperator })}
-              className="px-2 py-1.5 text-xs rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200"
+              className="px-2 py-1.5 text-xs rounded-lg bg-surface-overlay border border-border-strong text-fg-muted"
             >
               {OPERATORS.map((op) => <option key={op.value} value={op.value}>{op.label}</option>)}
             </select>
@@ -71,14 +71,14 @@ export default function FilterBar({ columns, filters, onChange }: FilterBarProps
                   value={Array.isArray(f.value) ? String(f.value[0] ?? "") : ""}
                   onChange={(e) => updateFilter(i, { value: [e.target.value, Array.isArray(f.value) ? f.value[1] : ""] })}
                   placeholder="min"
-                  className="w-full px-2 py-1.5 text-xs rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200"
+                  className="w-full px-2 py-1.5 text-xs rounded-lg bg-surface-overlay border border-border-strong text-fg-muted"
                 />
                 <input
                   type="text"
                   value={Array.isArray(f.value) ? String(f.value[1] ?? "") : ""}
                   onChange={(e) => updateFilter(i, { value: [Array.isArray(f.value) ? f.value[0] : "", e.target.value] })}
                   placeholder="max"
-                  className="w-full px-2 py-1.5 text-xs rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200"
+                  className="w-full px-2 py-1.5 text-xs rounded-lg bg-surface-overlay border border-border-strong text-fg-muted"
                 />
               </div>
             ) : (
@@ -87,20 +87,20 @@ export default function FilterBar({ columns, filters, onChange }: FilterBarProps
                 value={typeof f.value === "string" || typeof f.value === "number" ? String(f.value) : ""}
                 onChange={(e) => updateFilter(i, { value: e.target.value })}
                 placeholder="value"
-                className="flex-1 px-2 py-1.5 text-xs rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200"
+                className="flex-1 px-2 py-1.5 text-xs rounded-lg bg-surface-overlay border border-border-strong text-fg-muted"
               />
             )}
             <button
               type="button"
               onClick={() => removeFilter(i)}
               aria-label="Remove filter"
-              className="text-zinc-500 hover:text-red-400 text-xs px-1"
+              className="text-fg0 hover:text-red-400 text-xs px-1"
             >
               ✕
             </button>
           </div>
         ))}
-        {filters.length === 0 && <p className="text-[11px] text-zinc-500">No filters applied.</p>}
+        {filters.length === 0 && <p className="text-[11px] text-fg0">No filters applied.</p>}
       </div>
     </div>
   );

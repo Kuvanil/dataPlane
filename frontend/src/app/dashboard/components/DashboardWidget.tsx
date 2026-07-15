@@ -36,7 +36,7 @@ export function DashboardWidget({
   children,
 }: DashboardWidgetProps) {
   const header = (
-    <h3 className="font-semibold text-zinc-200 flex items-center gap-2">
+    <h3 className="font-semibold text-fg-muted flex items-center gap-2">
       {icon && (
         <span role="img" aria-hidden="true">
           {icon}
@@ -48,8 +48,8 @@ export function DashboardWidget({
 
   return (
     <div
-      className={`p-5 rounded-2xl bg-zinc-900/50 border backdrop-blur-sm ${
-        isError ? "border-red-500/30" : "border-zinc-800"
+      className={`p-5 rounded-2xl bg-surface-elevated border backdrop-blur-sm ${
+        isError ? "border-red-500/30" : "border-border"
       } ${className}`}
     >
       <div className="mb-4 flex items-center justify-between">
@@ -64,9 +64,9 @@ export function DashboardWidget({
 
       {isLoading ? (
         <div aria-hidden="true" className="flex flex-col gap-2">
-          <div className="h-4 w-3/4 rounded bg-zinc-800 animate-pulse" />
-          <div className="h-4 w-1/2 rounded bg-zinc-800 animate-pulse" />
-          <div className="h-4 w-2/3 rounded bg-zinc-800 animate-pulse" />
+          <div className="h-4 w-3/4 rounded bg-surface-overlay animate-pulse" />
+          <div className="h-4 w-1/2 rounded bg-surface-overlay animate-pulse" />
+          <div className="h-4 w-2/3 rounded bg-surface-overlay animate-pulse" />
         </div>
       ) : isError ? (
         <div className="text-sm text-red-400">
@@ -81,7 +81,7 @@ export function DashboardWidget({
           )}
         </div>
       ) : isEmpty ? (
-        <div className="text-xs text-zinc-500">
+        <div className="text-xs text-fg0">
           <p>{emptyMessage || "No data available."}</p>
           {emptyAction && (
             <Link

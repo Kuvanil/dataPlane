@@ -80,6 +80,6 @@ export function statusColor(status: string): string {
     case "retrying":
       return "bg-amber-500/15 text-amber-300 border-amber-500/30";
     default:
-      return "bg-zinc-800 text-zinc-400 border-zinc-700";
+      return "bg-surface-overlay text-fg-subtle border-border-strong";
   }
 }

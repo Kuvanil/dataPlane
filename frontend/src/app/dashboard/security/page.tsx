@@ -32,23 +32,23 @@ export default function SecurityPage() {
 
   return (
     <div className="p-8 flex flex-col gap-6 h-full">
-      <div className="flex justify-between items-center bg-zinc-900/40 p-5 rounded-2xl border border-zinc-800 backdrop-blur-sm">
+      <div className="flex justify-between items-center bg-surface-elevated p-5 rounded-2xl border border-border backdrop-blur-sm">
         <div>
-          <h3 className="text-lg font-semibold text-zinc-200">Security Administration</h3>
-          <p className="text-xs text-zinc-500">
+          <h3 className="text-lg font-semibold text-fg-muted">Security Administration</h3>
+          <p className="text-xs text-fg0">
             Roles, permissions, data-protection policies (masking + row-level access), and the security audit trail.
             {!isAdmin && " You're viewing in read-only mode — only admins can change roles or policies."}
           </p>
         </div>
         <button
           onClick={() => router.push("/dashboard/schema")}
-          className="px-4 py-2 text-sm font-semibold text-zinc-300 bg-zinc-800 rounded-xl hover:bg-zinc-700 transition-all flex items-center gap-2"
+          className="px-4 py-2 text-sm font-semibold text-fg-muted bg-surface-overlay rounded-xl hover:bg-surface-overlay transition-all flex items-center gap-2"
         >
           🔍 PII Classifications (Schema Intel) →
         </button>
       </div>
 
-      <div className="flex border-b border-zinc-800">
+      <div className="flex border-b border-border">
         {TABS.map((tab) => (
           <button
             key={tab.key}
@@ -56,8 +56,8 @@ export default function SecurityPage() {
             className={classNames(
               "px-4 py-2 text-sm transition-colors",
               activeTab === tab.key
-                ? "text-zinc-100 border-b-2 border-blue-500 font-semibold"
-                : "text-zinc-500 hover:text-zinc-300",
+                ? "text-fg border-b-2 border-blue-500 font-semibold"
+                : "text-fg0 hover:text-fg-muted",
             )}
           >
             {tab.label}

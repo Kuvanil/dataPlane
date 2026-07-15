@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from sqlalchemy.orm import Session
 
 from app.models.connection import DBConnection
+from app.services.dba_intent_classifier import classify_intent
 from app.services.nl2sql_service import NL2SQLService
 from app.services.schema_catalog_service import SchemaCatalogService
 from app.services.schema_service import SchemaService, get_connector
@@ -114,20 +115,206 @@ def _summarize_rows(rows: List[Dict[str, Any]]) -> str:
     return f"Found {n} row{'s' if n != 1 else ''}."
 
 
+def _dispatch_plan_generation(plan_id: int) -> None:
+    """Celery dispatch, separated so tests can run generation inline."""
+    from app.tasks.agentic_dba_tasks import generate_plan_task
+    generate_plan_task.delay(plan_id)
+
+
+# ── external_action intent handling (aci_integration_tasks #4) ───────────
+
+import re as _re
+
+_CHANNEL_RE = _re.compile(r"#[\w-]+")
+_EMAIL_RE = _re.compile(r"[\w.+-]+@[\w-]+\.[\w.]+")
+_TICKET_RE = _re.compile(r"\b(ticket|issue|jira|linear|github|pull\s+request|pr)\b",
+                         _re.IGNORECASE)
+
+
+def _resolve_external_target(question: str) -> Optional[Dict[str, Any]]:
+    """Map a request to a governed action type + payload, or None when the
+    target isn't resolvable (→ clarifying question, never a guess)."""
+    email = _EMAIL_RE.search(question)
+    if email:
+        return {
+            "action_type": "external_email_send",
+            "payload": {"to": email.group(0), "subject": question[:80],
+                        "body": question},
+            "subject": f"email:{email.group(0)}",
+        }
+    channel = _CHANNEL_RE.search(question)
+    if channel:
+        return {
+            "action_type": "external_message_send",
+            "payload": {"destination": channel.group(0), "body": question},
+            "subject": f"channel:{channel.group(0)}",
+        }
+    if _TICKET_RE.search(question):
+        return {
+            "action_type": "external_ticket_create",
+            "payload": {"title": question[:80], "body": question},
+            "subject": f"ticket:{question[:60]}",
+        }
+    return None
+
+
+def _handle_external_action(db: Session, question: str, actor: str,
+                            connection: DBConnection,
+                            result: Dict[str, Any]) -> Dict[str, Any]:
+    """Route an external_action request through ACI tool discovery + the
+    governance registry's approval queue. Never NL2SQL, never ungated
+    execution — even the discovery step degrades fast and clearly when ACI
+    is down (circuit breaker), leaving the rest of AskData untouched."""
+    from app.services.aci_client_service import (
+        AciNotConfigured, CircuitBreakerOpen, aci_client,
+    )
+    from app.services.audit_helper import emit_audit_event
+    from app.services.autopilot_service import AutopilotService
+
+    result["method"] = "intent_gate"
+
+    target = _resolve_external_target(question)
+    if target is None:
+        result["needs_clarification"] = True
+        result["summary"] = (
+            "This looks like a request to act on an external tool, but I can't "
+            "tell where it should go. Name a destination — an email address, a "
+            "#channel, or 'open a ticket/issue' — and I'll queue it for approval."
+        )
+        return result
+
+    try:
+        tools = aci_client.search_tools(question)
+    except AciNotConfigured:
+        result["error"] = ("External actions aren't available: the ACI integration "
+                           "isn't configured (ACI_API_KEY is unset).")
+        return result
+    except CircuitBreakerOpen:
+        result["error"] = ("External actions are temporarily unavailable — the ACI "
+                           "service is unreachable (circuit open). Everything else "
+                           "keeps working; try again shortly.")
+        return result
+    except Exception as exc:
+        logger.warning("[askdata] external_action tool discovery failed: %s", exc)
+        result["error"] = f"External tool discovery failed: {exc}"
+        return result
+
+    rec, created = AutopilotService.upsert_recommendation(
+        db,
+        action_type=target["action_type"],
+        subject=target["subject"],
+        payload=target["payload"],
+        rationale={
+            "summary": f"Requested via AskData: {question[:200]}",
+            "matched_tools": [t.get("name") or t.get("function_name")
+                              for t in tools[:3]],
+        },
+        confidence=80.0,
+        created_by=actor,
+    )
+    emit_audit_event(
+        db, event_type="aci.external_action_requested", actor=actor,
+        module="aci_integration", target_type="recommendation", target_id=rec.id,
+        summary=f"{target['action_type']}: {question[:150]}",
+        outcome="success",
+        metadata={"action_type": target["action_type"],
+                  "recommendation_id": rec.id, "created": created,
+                  "matched_tools": [t.get("name") or t.get("function_name")
+                                    for t in tools[:3]]},
+    )
+    result["recommendation_id"] = rec.id
+    result["summary"] = (
+        f"This is an external action ({target['action_type']}). It's been queued "
+        f"for approval in AI Autopilot (recommendation #{rec.id}) — external "
+        f"side effects always require explicit human approval before executing."
+    )
+    return result
+
+
 def ask(
     db: Session,
     connection: DBConnection,
     question: str,
     role: str,
     history: List[Dict[str, str]],
+    actor: str = "unknown",
+    session_id: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Run one conversational turn: ground, generate, classify, execute, mask, summarize."""
+    """Run one conversational turn: classify intent, ground, generate, classify, execute, mask, summarize."""
+    # Intent gate (agentic_dba_tasks #1): classify BEFORE grounding/generation
+    # on the raw question (not the history-augmented text — prior turns must
+    # not tip a fresh read question into the build bucket or vice versa).
+    intent = classify_intent(question)
+    logger.info("[askdata] stage=intent_classified intent=%s confidence=%s", intent.intent, intent.confidence)
+
     schema, grounded = _ground_schema(db, connection)
     result: Dict[str, Any] = {
         "sql": None, "grounded": grounded, "confidence": 0, "method": "none",
         "executed": False, "columns": [], "rows": [], "row_count": 0,
         "masked_columns": [], "summary": None, "warnings": [], "error": None,
+        "intent": intent.intent, "intent_confidence": intent.confidence,
+        "intent_signal": intent.matched_signal,
+        "plan_id": None, "needs_clarification": False,
+        "recommendation_id": None,
     }
+
+    if intent.intent == "external_action":
+        # aci_integration_tasks #4: route to ACI tool discovery + the
+        # governed approval queue — never NL2SQL, never ungated execution.
+        return _handle_external_action(db, question, actor, connection, result)
+
+    if intent.intent == "schema_design":
+        # Do NOT attempt NL2SQL — the old fallback returned a meaningless
+        # `SELECT * FROM {first_table} LIMIT 50` for exactly this class of
+        # request. Route to the Agentic DBA planning engine instead.
+        result["method"] = "intent_gate"
+
+        # Clarifying-question flow (agentic_dba_tasks #10): a connection
+        # with no Schema Intel catalog can't ground a plan — ask, don't
+        # guess from live introspection alone.
+        if not grounded:
+            result["needs_clarification"] = True
+            result["summary"] = (
+                f"This looks like a schema design request, but connection "
+                f"'{connection.name}' hasn't been scanned into the Schema Intel "
+                f"catalog yet — a plan grounded in profiling needs that first. "
+                f"Scan it (Schema Intel → Scan catalog, ideally Profile columns "
+                f"too), then re-ask."
+            )
+            return result
+
+        from app.services.agentic_dba_engine import create_plan
+        plan = create_plan(
+            db, question=question, connection_id=connection.id,
+            session_id=session_id, actor=actor,
+        )
+        _dispatch_plan_generation(plan.id)
+        result["plan_id"] = plan.id
+        result["summary"] = (
+            "This is a schema/pipeline design request — generating a design plan "
+            "for review (proposed tables, data-quality rules, transformations, "
+            "and DDL). Nothing is created or executed without your explicit "
+            "approval."
+        )
+        return result
+
+    if intent.intent == "ambiguous":
+        # Low-confidence classification: if the question names a known table,
+        # today's read-query behavior is a reasonable guess; otherwise ask
+        # instead of guessing (agentic_dba_tasks #10). Threshold judgment
+        # call flagged in the epic INDEX — tune after real usage.
+        question_lower = question.lower()
+        mentions_table = any(t.lower() in question_lower for t in schema)
+        if not mentions_table:
+            result["method"] = "intent_gate"
+            result["needs_clarification"] = True
+            result["summary"] = (
+                "I couldn't tell whether you want to query existing data or "
+                "design something new. Try a question like 'show me all rows in "
+                "<table>', or a design request like 'create a target schema for "
+                "<domain> based on profiling'."
+            )
+            return result
     if not schema:
         result["error"] = "No schema available for this connection — try scanning it first."
         return result

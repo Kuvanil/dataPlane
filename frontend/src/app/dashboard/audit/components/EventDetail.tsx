@@ -7,8 +7,8 @@ import { useCorrelationTrace } from "../hooks/useAuditEvents";
 function Field({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[11px] uppercase tracking-wide text-zinc-500">{label}</span>
-      <span className="text-sm text-zinc-200">{value ?? <span className="text-zinc-600">—</span>}</span>
+      <span className="text-[11px] uppercase tracking-wide text-fg0">{label}</span>
+      <span className="text-sm text-fg-muted">{value ?? <span className="text-fg-subtle">—</span>}</span>
     </div>
   );
 }
@@ -27,14 +27,14 @@ export default function EventDetail({
   return (
     <div
       data-testid="event-detail"
-      className="rounded-2xl bg-zinc-900/50 border border-zinc-800 p-5 flex flex-col gap-5"
+      className="rounded-2xl bg-surface-elevated border border-border p-5 flex flex-col gap-5"
     >
       <div className="flex items-start justify-between">
         <div>
-          <div className="text-lg font-semibold text-zinc-100">{event.event_type}</div>
-          <div className="text-xs text-zinc-500 font-mono">#{event.id} · seq {event.sequence ?? "—"}</div>
+          <div className="text-lg font-semibold text-fg">{event.event_type}</div>
+          <div className="text-xs text-fg0 font-mono">#{event.id} · seq {event.sequence ?? "—"}</div>
         </div>
-        <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 text-sm">
+        <button onClick={onClose} className="text-fg0 hover:text-fg-muted text-sm">
           Close
         </button>
       </div>
@@ -52,24 +52,24 @@ export default function EventDetail({
 
       {event.summary && <Field label="Summary" value={event.summary} />}
 
-      <div className="grid grid-cols-1 gap-3 border-t border-zinc-800 pt-4">
+      <div className="grid grid-cols-1 gap-3 border-t border-border pt-4">
         <div>
-          <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">Before</div>
+          <div className="text-[11px] uppercase tracking-wide text-fg0 mb-1">Before</div>
           <JsonViewer data={event.before_summary} />
         </div>
         <div>
-          <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">After</div>
+          <div className="text-[11px] uppercase tracking-wide text-fg0 mb-1">After</div>
           <JsonViewer data={event.after_summary} />
         </div>
         <div>
-          <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-1">Metadata</div>
+          <div className="text-[11px] uppercase tracking-wide text-fg0 mb-1">Metadata</div>
           <JsonViewer data={event.metadata} />
         </div>
       </div>
 
       {event.correlation_id && (
-        <div className="border-t border-zinc-800 pt-4">
-          <div className="text-[11px] uppercase tracking-wide text-zinc-500 mb-2">Correlation Trace</div>
+        <div className="border-t border-border pt-4">
+          <div className="text-[11px] uppercase tracking-wide text-fg0 mb-2">Correlation Trace</div>
           <CorrelationTimeline
             events={trace.data?.events ?? []}
             isLoading={trace.isLoading}

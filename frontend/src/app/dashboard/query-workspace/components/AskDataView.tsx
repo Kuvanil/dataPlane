@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "@/lib/api";
 import ChatBubble from "../../askdata/components/ChatBubble";
 import ConnectionPicker from "../../askdata/components/ConnectionPicker";
+import SchemaDesignPlanCard from "./SchemaDesignPlanCard";
 import type { AskDataAskResponse, ChatTurn } from "../../askdata/lib/types";
 import type { Connection } from "../../query-studio/lib/types";
 
@@ -93,30 +94,39 @@ export default function AskDataView({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="p-4 border-b border-zinc-800 bg-zinc-900/40 backdrop-blur-sm flex justify-between items-center">
+      <div className="p-4 border-b border-border bg-surface-elevated backdrop-blur-sm flex justify-between items-center">
         <div>
-          <h3 className="text-lg font-semibold text-zinc-200 flex items-center gap-2">
+          <h3 className="text-lg font-semibold text-fg-muted flex items-center gap-2">
             <span className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-blue-600 flex items-center justify-center text-sm">🤖</span>
             AskData
           </h3>
-          <p className="text-xs text-zinc-500 ml-10">Ask in plain English — grounded, transparent SQL, read-only.</p>
+          <p className="text-xs text-fg0 ml-10">Ask in plain English — grounded, transparent SQL, read-only.</p>
         </div>
         <ConnectionPicker connections={connections} value={connectionId} onChange={setConnectionId} />
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 flex flex-col gap-4">
         {turns.map((turn, i) => (
-          <ChatBubble key={i} turn={turn} connectionId={connectionId} onEditInSql={onEditInSql} />
+          <div key={i}>
+            <ChatBubble turn={turn} connectionId={connectionId} onEditInSql={onEditInSql} />
+            {turn.response?.plan_id != null && (
+              <div className="flex justify-start">
+                <div className="max-w-[80%] w-full">
+                  <SchemaDesignPlanCard planId={turn.response.plan_id} />
+                </div>
+              </div>
+            )}
+          </div>
         ))}
         {loading && (
           <div className="flex justify-start">
-            <div className="bg-zinc-900/60 border border-zinc-800 rounded-2xl px-4 py-3 flex items-center gap-2">
+            <div className="bg-surface-elevated border border-border rounded-2xl px-4 py-3 flex items-center gap-2">
               <div className="flex gap-1">
                 <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
                 <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
                 <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
               </div>
-              <span className="text-xs text-zinc-500">Thinking…</span>
+              <span className="text-xs text-fg0">Thinking…</span>
             </div>
           </div>
         )}
@@ -129,7 +139,7 @@ export default function AskDataView({
             <button
               key={i}
               onClick={() => sendMessage(s)}
-              className="px-3 py-1.5 text-[11px] rounded-full bg-zinc-800/60 border border-zinc-700/50 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200 transition-all"
+              className="px-3 py-1.5 text-[11px] rounded-full bg-surface-overlay border border-border-strong/50 text-fg-subtle hover:bg-surface-overlay hover:text-fg-muted transition-all"
             >
               {s}
             </button>
@@ -137,7 +147,7 @@ export default function AskDataView({
         </div>
       )}
 
-      <div className="p-4 border-t border-zinc-800 bg-zinc-900/30">
+      <div className="p-4 border-t border-border bg-surface-elevated">
         <div className="flex gap-2">
           <input
             ref={inputRef}
@@ -145,7 +155,7 @@ export default function AskDataView({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && sendMessage()}
             placeholder="Ask about your data…"
-            className="flex-1 px-4 py-2.5 rounded-xl bg-zinc-800/50 border border-zinc-700 text-sm focus:outline-none focus:border-blue-500 text-zinc-200 placeholder:text-zinc-600"
+            className="flex-1 px-4 py-2.5 rounded-xl bg-surface-overlay border border-border-strong text-sm focus:outline-none focus:border-blue-500 text-fg-muted placeholder:text-fg-subtle"
           />
           <button
             onClick={() => sendMessage()}

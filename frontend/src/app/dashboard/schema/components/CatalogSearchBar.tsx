@@ -19,19 +19,19 @@ export default function CatalogSearchBar({
         value={q}
         onChange={(e) => onQChange(e.target.value)}
         placeholder="Search table or column name…"
-        className="flex-1 min-w-[200px] px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-blue-500"
+        className="flex-1 min-w-[200px] px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm text-fg placeholder:text-fg0 focus:outline-none focus:border-blue-500"
       />
       <input
         type="text"
         value={dataType}
         onChange={(e) => onDataTypeChange(e.target.value)}
         placeholder="Data type (e.g. TEXT)"
-        className="w-40 px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-100 placeholder:text-zinc-500 focus:outline-none focus:border-blue-500"
+        className="w-40 px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm text-fg placeholder:text-fg0 focus:outline-none focus:border-blue-500"
       />
       <select
         value={classificationLabel}
         onChange={(e) => onClassificationLabelChange(e.target.value)}
-        className="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-100 focus:outline-none focus:border-blue-500"
+        className="px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm text-fg focus:outline-none focus:border-blue-500"
       >
         <option value="">All classifications</option>
         <option value="PII">PII</option>

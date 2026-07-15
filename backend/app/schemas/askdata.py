@@ -24,6 +24,17 @@ class AskDataAskResponse(BaseModel):
     summary: Optional[str] = None
     warnings: List[str] = Field(default_factory=list)
     error: Optional[str] = None
+    # Intent gate (agentic_dba_tasks #1): read_query | schema_design | ambiguous
+    intent: str = "read_query"
+    intent_confidence: float = 0.0
+    # Agentic DBA plan reference (agentic_dba_tasks #3/#6): set when a
+    # schema_design turn spawned a plan — the frontend polls
+    # GET /agentic-dba/plans/{plan_id} while it generates.
+    plan_id: Optional[int] = None
+    needs_clarification: bool = False
+    # aci_integration_tasks #4: set when an external_action request was
+    # queued for approval in the Autopilot queue.
+    recommendation_id: Optional[int] = None
 
 
 class ChatMessageEntry(BaseModel):

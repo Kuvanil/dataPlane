@@ -32,17 +32,17 @@ export default function ResultsTable({
   }
 
   if (result.rows.length === 0) {
-    return <div className="text-xs text-zinc-500 p-3">Query returned no rows.</div>;
+    return <div className="text-xs text-fg0 p-3">Query returned no rows.</div>;
   }
 
   return (
     <div className="flex flex-col gap-2">
-      <div className="overflow-x-auto rounded-lg border border-zinc-800">
+      <div className="overflow-x-auto rounded-lg border border-border">
         <table className="w-full text-xs border-collapse">
           <thead>
-            <tr className="bg-zinc-900/50">
+            <tr className="bg-surface-elevated">
               {result.columns.map((c) => (
-                <th key={c} className="p-2 text-left font-semibold text-zinc-400 border-b border-zinc-800">
+                <th key={c} className="p-2 text-left font-semibold text-fg-subtle border-b border-border">
                   {c}
                 </th>
               ))}
@@ -50,11 +50,11 @@ export default function ResultsTable({
           </thead>
           <tbody>
             {result.rows.map((row, i) => (
-              <tr key={i} className="hover:bg-zinc-800/20 transition-colors">
+              <tr key={i} className="hover:bg-surface-overlay transition-colors">
                 {result.columns.map((c) => (
-                  <td key={c} className="p-2 text-zinc-300 font-mono border-b border-zinc-800/40">
+                  <td key={c} className="p-2 text-fg-muted font-mono border-b border-border/40">
                     {row[c] === null || row[c] === undefined ? (
-                      <span className="text-zinc-600">null</span>
+                      <span className="text-fg-subtle">null</span>
                     ) : (
                       String(row[c])
                     )}
@@ -65,7 +65,7 @@ export default function ResultsTable({
           </tbody>
         </table>
       </div>
-      <div className="flex items-center justify-between text-[11px] text-zinc-500">
+      <div className="flex items-center justify-between text-[11px] text-fg0">
         <span>
           {result.row_count} row{result.row_count === 1 ? "" : "s"}
           {result.truncated ? " (truncated)" : ""}
@@ -75,7 +75,7 @@ export default function ResultsTable({
           <button
             onClick={() => onPageChange(Math.max(1, page - 1))}
             disabled={page === 1}
-            className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded disabled:opacity-40"
+            className="px-2 py-1 bg-surface-overlay hover:bg-surface-overlay rounded disabled:opacity-40"
           >
             Prev
           </button>
@@ -83,7 +83,7 @@ export default function ResultsTable({
           <button
             onClick={() => onPageChange(page + 1)}
             disabled={!result.has_more}
-            className="px-2 py-1 bg-zinc-800 hover:bg-zinc-700 rounded disabled:opacity-40"
+            className="px-2 py-1 bg-surface-overlay hover:bg-surface-overlay rounded disabled:opacity-40"
           >
             Next
           </button>

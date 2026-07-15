@@ -118,24 +118,24 @@ function CatalogList({
 }) {
   return (
     <aside
-      className="w-72 border-r border-zinc-800 bg-zinc-900/30 flex flex-col"
+      className="w-72 border-r border-border bg-surface-elevated flex flex-col"
       aria-label="Metric catalog"
     >
-      <div className="p-4 border-b border-zinc-800">
-        <h3 className="text-sm font-semibold text-zinc-200">Metric Catalog</h3>
-        <p className="text-[10px] text-zinc-500 uppercase tracking-wider">
+      <div className="p-4 border-b border-border">
+        <h3 className="text-sm font-semibold text-fg-muted">Metric Catalog</h3>
+        <p className="text-[10px] text-fg0 uppercase tracking-wider">
           Drafts & published
         </p>
       </div>
-      <div className="p-3 border-b border-zinc-800 space-y-2">
+      <div className="p-3 border-b border-border space-y-2">
         <input
           type="text"
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder="Search name or description"
-          className="w-full px-3 py-1.5 rounded bg-zinc-800 border border-zinc-700 text-xs text-zinc-100 focus:outline-none focus:border-blue-500"
+          className="w-full px-3 py-1.5 rounded bg-surface-overlay border border-border-strong text-xs text-fg focus:outline-none focus:border-blue-500"
         />
-        <label className="flex items-center gap-2 text-xs text-zinc-400">
+        <label className="flex items-center gap-2 text-xs text-fg-subtle">
           <input
             type="checkbox"
             checked={onlyPublished}
@@ -145,17 +145,17 @@ function CatalogList({
         </label>
       </div>
       {canCreate && (
-        <div className="p-3 border-b border-zinc-800">
+        <div className="p-3 border-b border-border">
           <NewMetricButton onCreated={onCreated} />
         </div>
       )}
       <div className="flex-1 overflow-y-auto">
         {loading ? (
-          <div className="p-4 text-xs text-zinc-500">Loading catalog…</div>
+          <div className="p-4 text-xs text-fg0">Loading catalog…</div>
         ) : error ? (
           <div className="p-4 text-xs text-red-400">{error}</div>
         ) : catalog.length === 0 ? (
-          <div className="p-4 text-xs text-zinc-500 italic">
+          <div className="p-4 text-xs text-fg0 italic">
             No metrics yet.
           </div>
         ) : (
@@ -170,7 +170,7 @@ function CatalogList({
                     "w-full text-left px-3 py-2 rounded-lg text-xs border transition-all",
                     selectedId === m.id
                       ? "bg-blue-600/10 border-blue-500/30 text-blue-300"
-                      : "border-transparent hover:bg-zinc-800/40 text-zinc-300",
+                      : "border-transparent hover:bg-surface-overlay text-fg-muted",
                   )}
                 >
                   <div className="flex items-center justify-between gap-1">
@@ -193,11 +193,11 @@ function CatalogList({
                     </div>
                   )}
                   {m.description && (
-                    <div className="mt-1 text-[10px] text-zinc-500 truncate">
+                    <div className="mt-1 text-[10px] text-fg0 truncate">
                       {m.description}
                     </div>
                   )}
-                  <div className="mt-1 text-[9px] text-zinc-600">
+                  <div className="mt-1 text-[9px] text-fg-subtle">
                     v{m.version_number} · {m.aggregation ?? "—"}
                   </div>
                 </button>
@@ -259,7 +259,7 @@ function NewMetricButton({ onCreated }: { onCreated: (m: MetricCatalogEntry) => 
         onChange={(e) => setName(e.target.value)}
         placeholder="Metric name"
         autoFocus
-        className="w-full px-3 py-1.5 rounded bg-zinc-800 border border-zinc-700 text-xs text-zinc-100 focus:outline-none focus:border-blue-500"
+        className="w-full px-3 py-1.5 rounded bg-surface-overlay border border-border-strong text-xs text-fg focus:outline-none focus:border-blue-500"
       />
       {error && <div className="text-[10px] text-red-400">{error}</div>}
       <div className="flex gap-2">
@@ -274,7 +274,7 @@ function NewMetricButton({ onCreated }: { onCreated: (m: MetricCatalogEntry) => 
         <button
           type="button"
           onClick={() => { setShowForm(false); setError(null); }}
-          className="px-2 py-1 text-xs text-zinc-400 hover:text-zinc-200"
+          className="px-2 py-1 text-xs text-fg-subtle hover:text-fg-muted"
         >
           Cancel
         </button>
@@ -291,10 +291,10 @@ function EmptyState({ canCreate, onCreated }: {
   return (
     <div className="max-w-md text-center mx-auto py-20">
       <div className="text-5xl mb-3">📐</div>
-      <h2 className="text-lg font-semibold text-zinc-200 mb-2">
+      <h2 className="text-lg font-semibold text-fg-muted mb-2">
         Select or create a metric
       </h2>
-      <p className="text-sm text-zinc-500">
+      <p className="text-sm text-fg0">
         Pick a metric from the catalog on the left, or create a new one
         {canCreate ? " to start defining it." : "."}
       </p>
@@ -386,16 +386,16 @@ function MetricDetail({
     }
   };
 
-  if (loading) return <div className="text-sm text-zinc-500">Loading…</div>;
+  if (loading) return <div className="text-sm text-fg0">Loading…</div>;
   if (error) return <div className="text-sm text-red-400">{error}</div>;
-  if (!metric || !draft) return <div className="text-sm text-zinc-500">Not found.</div>;
+  if (!metric || !draft) return <div className="text-sm text-fg0">Not found.</div>;
 
   return (
     <div className="max-w-2xl mx-auto space-y-4">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-2xl font-semibold text-zinc-100">{metric.name}</h2>
-          <p className="text-xs text-zinc-500 mt-1">
+          <h2 className="text-2xl font-semibold text-fg">{metric.name}</h2>
+          <p className="text-xs text-fg0 mt-1">
             v{metric.version_number} · {metric.status} ·
             {" "}created by {metric.created_by}
           </p>
@@ -430,7 +430,7 @@ function MetricDetail({
           <button
             type="button"
             onClick={() => setEditing(true)}
-            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface-overlay text-fg-muted hover:bg-surface-overlay"
           >
             ✎ Edit
           </button>
@@ -447,7 +447,7 @@ function MetricDetail({
             <button
               type="button"
               onClick={() => setEditing(false)}
-              className="px-3 py-1.5 text-xs text-zinc-400 hover:text-zinc-200"
+              className="px-3 py-1.5 text-xs text-fg-subtle hover:text-fg-muted"
             >
               Cancel
             </button>
@@ -463,7 +463,7 @@ function MetricDetail({
           </button>
         )}
         {!canEditThisVersion && (
-          <p className="text-[11px] text-zinc-500 italic">
+          <p className="text-[11px] text-fg0 italic">
             {isDraft
               ? "Your role can't edit this draft."
               : "Published versions are immutable; create a new draft to iterate."}
@@ -492,14 +492,14 @@ function DefinitionView({ metric }: { metric: MetricDefinitionView }) {
       </Section>
       {metric.description && (
         <Section title="Description">
-          <p className="text-xs text-zinc-300">{metric.description}</p>
+          <p className="text-xs text-fg-muted">{metric.description}</p>
         </Section>
       )}
       {metric.lineage && metric.lineage.length > 0 && (
         <Section title={`Lineage (${metric.lineage.length})`}>
           <ul className="space-y-1 text-[11px] font-mono">
             {metric.lineage.map((ln) => (
-              <li key={ln.id} className="text-zinc-400">
+              <li key={ln.id} className="text-fg-subtle">
                 <span className="text-violet-300">[{ln.role}]</span>{" "}
                 catalog column #{ln.catalog_column_id ?? "—"}
               </li>
@@ -520,8 +520,8 @@ function DefinitionEditor({ draft, setDraft }: {
     setDraft({ ...draft, [k]: v });
 
   return (
-    <div className="space-y-3 rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <h3 className="text-sm font-semibold text-zinc-200">Edit definition</h3>
+    <div className="space-y-3 rounded-lg border border-border bg-surface-elevated p-4">
+      <h3 className="text-sm font-semibold text-fg-muted">Edit definition</h3>
       <div className="grid grid-cols-2 gap-3">
         <Field label="Entity">
           <input
@@ -583,7 +583,7 @@ function DefinitionEditor({ draft, setDraft }: {
           />
         </Field>
       </div>
-      <label className="flex items-center gap-2 text-xs text-zinc-400">
+      <label className="flex items-center gap-2 text-xs text-fg-subtle">
         <input
           type="checkbox"
           checked={draft.certified}
@@ -597,12 +597,12 @@ function DefinitionEditor({ draft, setDraft }: {
 
 
 const inputCls =
-  "w-full px-2 py-1.5 rounded bg-zinc-800 border border-zinc-700 text-xs text-zinc-100 focus:outline-none focus:border-blue-500";
+  "w-full px-2 py-1.5 rounded bg-surface-overlay border border-border-strong text-xs text-fg focus:outline-none focus:border-blue-500";
 
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="block text-xs text-zinc-400">
+    <label className="block text-xs text-fg-subtle">
       {label}
       <div className="mt-1">{children}</div>
     </label>
@@ -612,8 +612,8 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-4">
-      <h4 className="text-xs font-semibold text-zinc-300 uppercase tracking-wider mb-2">
+    <div className="rounded-lg border border-border bg-surface-elevated p-4">
+      <h4 className="text-xs font-semibold text-fg-muted uppercase tracking-wider mb-2">
         {title}
       </h4>
       <div className="space-y-1">{children}</div>
@@ -625,8 +625,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 function KV({ k, v }: { k: string; v: string }) {
   return (
     <div className="flex gap-2 text-[11px]">
-      <span className="text-zinc-500 min-w-[6rem]">{k}</span>
-      <span className="text-zinc-200 font-mono">{v}</span>
+      <span className="text-fg0 min-w-[6rem]">{k}</span>
+      <span className="text-fg-muted font-mono">{v}</span>
     </div>
   );
 }

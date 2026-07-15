@@ -50,12 +50,29 @@ def profile_column_task(self, connection_id: int, table_name: str,
             )
             _warned_connections.add(connection_id)
 
+        from app.services.profiling_enrichment import (
+            compute_uniqueness_ratio, count_duplicate_values, infer_fk_candidates,
+        )
+
         connector = get_connector(conn)
         try:
             result = connector.profile_column(
                 table=table_name, column=column_name,
                 sample_limit=settings.SCHEMA_INTEL_SAMPLE_LIMIT,
                 distinct_scan_limit=settings.SCHEMA_INTEL_MAX_DISTINCT_SCAN_ROWS,
+            )
+            # Enrichment (agentic_dba_tasks #2): consumes the in-memory
+            # sample while the connector is still open; persists aggregates
+            # + candidate metadata only, never sampled values.
+            uniqueness_ratio = compute_uniqueness_ratio(result.distinct_count, result.row_count)
+            duplicate_count = count_duplicate_values(result.sample_values)
+            fk_candidates = infer_fk_candidates(
+                db, connection_id, connector, table_name, column_name,
+                result.sample_values,
+                db_type=conn.type,
+                max_tables=settings.SCHEMA_INTEL_FK_MAX_TABLES,
+                pk_value_limit=settings.SCHEMA_INTEL_FK_PK_VALUE_LIMIT,
+                min_overlap=settings.SCHEMA_INTEL_FK_MIN_OVERLAP,
             )
         finally:
             connector.close()
@@ -69,6 +86,10 @@ def profile_column_task(self, connection_id: int, table_name: str,
             existing.min_value = result.min_value
             existing.max_value = result.max_value
             existing.sample_size_used = result.sample_size_used
+            existing.row_count = result.row_count
+            existing.uniqueness_ratio = uniqueness_ratio
+            existing.duplicate_count = duplicate_count
+            existing.fk_candidates = fk_candidates
         else:
             db.add(ColumnProfile(
                 column_id=column_id,
@@ -78,6 +99,10 @@ def profile_column_task(self, connection_id: int, table_name: str,
                 min_value=result.min_value,
                 max_value=result.max_value,
                 sample_size_used=result.sample_size_used,
+                row_count=result.row_count,
+                uniqueness_ratio=uniqueness_ratio,
+                duplicate_count=duplicate_count,
+                fk_candidates=fk_candidates,
             ))
 
         # Classify using the in-memory sample values (value-pattern half of

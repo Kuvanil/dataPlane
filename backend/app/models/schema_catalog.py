@@ -14,7 +14,7 @@ full-replace-per-table upsert that populates these tables.
 from __future__ import annotations
 
 from sqlalchemy import (
-    Column, Integer, String, Boolean, DateTime, Float, ForeignKey, UniqueConstraint,
+    Column, Integer, String, Boolean, DateTime, Float, ForeignKey, JSON, UniqueConstraint,
 )
 from sqlalchemy.orm import backref, relationship
 from sqlalchemy.sql import func
@@ -106,6 +106,18 @@ class ColumnProfile(Base):
     min_value = Column(String, nullable=True)                     # String-ified, connector-agnostic
     max_value = Column(String, nullable=True)
     sample_size_used = Column(Integer, nullable=False, default=0) # Metadata only, not the data itself
+
+    # ── Profiling enrichment (agentic_dba_tasks #2) — all additive/nullable.
+    # Running dev Postgres needs a manual ALTER (recorded in the epic's
+    # INDEX.md progress log, per repo convention for catalog model changes).
+    row_count = Column(Integer, nullable=True)                    # total table rows at profile time
+    uniqueness_ratio = Column(Float, nullable=True)               # distinct_count / row_count, 0.0-1.0
+    duplicate_count = Column(Integer, nullable=True)              # distinct sampled values seen >1x —
+                                                                  # an aggregate; the values themselves
+                                                                  # stay in-memory (Task #8 Decision 1)
+    fk_candidates = Column(JSON, nullable=True)                   # [{table, column, overlap_ratio}] —
+                                                                  # heuristic hints w/ confidence, never
+                                                                  # asserted facts
 
     profiled_at = Column(DateTime(timezone=True), server_default=func.now(),
                          onupdate=func.now(), nullable=False)

@@ -100,12 +100,12 @@ export default function ConnectorsPage() {
     <div className="p-8 flex flex-col gap-6 relative h-full overflow-y-auto">
       <div className="flex justify-between items-center">
         <div>
-          <h3 className="text-lg font-semibold text-zinc-200">Your Connectors</h3>
-          <p className="text-xs text-zinc-500">Manage sources and targets — Postgres, MySQL, Oracle, SQLite, JDBC</p>
+          <h3 className="text-lg font-semibold text-fg-muted">Your Connectors</h3>
+          <p className="text-xs text-fg0">Manage sources and targets — Postgres, MySQL, Oracle, SQLite, JDBC</p>
         </div>
         <button
           onClick={() => { setIsModalOpen(true); setCreateError(null); }}
-          className="px-4 py-2 text-sm font-semibold text-zinc-950 bg-white rounded-xl hover:bg-zinc-200 transition-all flex items-center gap-2"
+          className="px-4 py-2 text-sm font-semibold text-fg bg-white rounded-xl hover:bg-surface transition-all flex items-center gap-2"
         >
           ➕ New Connector
         </button>
@@ -119,7 +119,7 @@ export default function ConnectorsPage() {
       )}
 
       {loading ? (
-        <div className="flex-1 flex items-center justify-center text-zinc-500 text-sm">Loading connectors...</div>
+        <div className="flex-1 flex items-center justify-center text-fg0 text-sm">Loading connectors...</div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {connectors.map((c) => (
@@ -136,7 +136,7 @@ export default function ConnectorsPage() {
           ))}
           <div
             onClick={() => { setIsModalOpen(true); setCreateError(null); }}
-            className="border border-dashed border-zinc-800 rounded-2xl flex flex-col items-center justify-center p-6 text-zinc-500 hover:border-zinc-600 hover:text-zinc-400 cursor-pointer transition-all min-h-[160px]"
+            className="border border-dashed border-border rounded-2xl flex flex-col items-center justify-center p-6 text-fg0 hover:border-border-strong hover:text-fg-subtle cursor-pointer transition-all min-h-[160px]"
           >
             <span className="text-3xl mb-1">🔌</span>
             <span className="text-sm">Link another Database</span>
@@ -147,28 +147,28 @@ export default function ConnectorsPage() {
       {/* Create modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
-          <div className="w-full max-w-md p-6 rounded-2xl bg-zinc-900 border border-zinc-800 flex flex-col gap-4 shadow-2xl">
-            <h3 className="text-lg font-semibold text-zinc-200">New Database Connector</h3>
+          <div className="w-full max-w-md p-6 rounded-2xl bg-surface border border-border flex flex-col gap-4 shadow-2xl">
+            <h3 className="text-lg font-semibold text-fg-muted">New Database Connector</h3>
             {createError && (
               <div className="p-2 rounded-lg border border-rose-500/40 bg-rose-500/10 text-rose-300 text-xs">{createError}</div>
             )}
             <form onSubmit={handleCreate} className="flex flex-col gap-3">
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-zinc-400">Connector Name</label>
+                <label className="text-xs text-fg-subtle">Connector Name</label>
                 <input
                   value={name}
                   onChange={e => setName(e.target.value)}
                   required
                   placeholder="My_Database"
-                  className="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm focus:outline-none focus:border-blue-500 text-zinc-200"
+                  className="px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm focus:outline-none focus:border-blue-500 text-fg-muted"
                 />
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-zinc-400">Type</label>
+                <label className="text-xs text-fg-subtle">Type</label>
                 <select
                   value={type}
                   onChange={e => { setType(e.target.value); setConfigJson(CONFIG_TEMPLATES[e.target.value] ?? "{}"); }}
-                  className="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm focus:outline-none focus:border-blue-500 text-zinc-300"
+                  className="px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm focus:outline-none focus:border-blue-500 text-fg-muted"
                 >
                   {VALID_TYPES.map(t => (
                     <option key={t} value={t}>{TYPE_META[t]?.icon} {t}</option>
@@ -176,20 +176,20 @@ export default function ConnectorsPage() {
                 </select>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-xs text-zinc-400">Config JSON</label>
+                <label className="text-xs text-fg-subtle">Config JSON</label>
                 <textarea
                   value={configJson}
                   onChange={e => setConfigJson(e.target.value)}
                   required
                   rows={4}
-                  className="px-3 py-2 font-mono text-xs rounded-lg bg-zinc-800 border border-zinc-700 focus:outline-none focus:border-blue-500 text-zinc-300"
+                  className="px-3 py-2 font-mono text-xs rounded-lg bg-surface-overlay border border-border-strong focus:outline-none focus:border-blue-500 text-fg-muted"
                 />
               </div>
               <div className="flex gap-2 mt-4">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-semibold text-zinc-400"
+                  className="flex-1 py-2 bg-surface-overlay hover:bg-surface-overlay rounded-xl text-sm font-semibold text-fg-subtle"
                 >
                   Cancel
                 </button>
@@ -209,32 +209,32 @@ export default function ConnectorsPage() {
       {/* Schema modal */}
       {schemaModal && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="w-full max-w-2xl max-h-[80vh] flex flex-col rounded-2xl bg-zinc-900 border border-zinc-800 shadow-2xl overflow-hidden">
-            <div className="flex justify-between items-center p-5 border-b border-zinc-800">
+          <div className="w-full max-w-2xl max-h-[80vh] flex flex-col rounded-2xl bg-surface border border-border shadow-2xl overflow-hidden">
+            <div className="flex justify-between items-center p-5 border-b border-border">
               <div>
-                <h3 className="text-sm font-semibold text-zinc-200">{schemaModal.name} — Schema</h3>
-                <p className="text-xs text-zinc-500">{Object.keys(schemaModal.schema).length} tables</p>
+                <h3 className="text-sm font-semibold text-fg-muted">{schemaModal.name} — Schema</h3>
+                <p className="text-xs text-fg0">{Object.keys(schemaModal.schema).length} tables</p>
               </div>
-              <button onClick={() => setSchemaModal(null)} className="text-zinc-500 hover:text-zinc-300 text-xs">✕ Close</button>
+              <button onClick={() => setSchemaModal(null)} className="text-fg0 hover:text-fg-muted text-xs">✕ Close</button>
             </div>
             <div className="overflow-y-auto p-5 flex flex-col gap-4">
               {Object.entries(schemaModal.schema).map(([table, cols]) => (
-                <div key={table} className="rounded-xl border border-zinc-800 overflow-hidden">
-                  <div className="px-4 py-2 bg-zinc-800/40 text-xs font-semibold text-zinc-300 font-mono">
-                    {table} <span className="text-zinc-500 font-normal">({cols.length} cols)</span>
+                <div key={table} className="rounded-xl border border-border overflow-hidden">
+                  <div className="px-4 py-2 bg-surface-overlay text-xs font-semibold text-fg-muted font-mono">
+                    {table} <span className="text-fg0 font-normal">({cols.length} cols)</span>
                   </div>
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="border-b border-zinc-800">
-                        <th className="px-4 py-2 text-left text-zinc-500 font-medium">Column</th>
-                        <th className="px-4 py-2 text-left text-zinc-500 font-medium">Type</th>
+                      <tr className="border-b border-border">
+                        <th className="px-4 py-2 text-left text-fg0 font-medium">Column</th>
+                        <th className="px-4 py-2 text-left text-fg0 font-medium">Type</th>
                       </tr>
                     </thead>
                     <tbody>
                       {cols.map(col => (
-                        <tr key={col.name} className="border-b border-zinc-800/50 hover:bg-zinc-800/20">
-                          <td className="px-4 py-1.5 font-mono text-zinc-300">{col.name}</td>
-                          <td className="px-4 py-1.5 font-mono text-zinc-500">{col.type}</td>
+                        <tr key={col.name} className="border-b border-border/50 hover:bg-surface-overlay">
+                          <td className="px-4 py-1.5 font-mono text-fg-muted">{col.name}</td>
+                          <td className="px-4 py-1.5 font-mono text-fg0">{col.type}</td>
                         </tr>
                       ))}
                     </tbody>

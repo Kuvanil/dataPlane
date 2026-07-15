@@ -70,7 +70,7 @@ export default function ApprovalQueue({
               className={`px-2.5 py-1 text-xs rounded-lg border ${
                 statusFilter === f
                   ? "bg-violet-500/15 text-violet-300 border-violet-500/30"
-                  : "bg-zinc-900 text-zinc-500 border-zinc-800 hover:text-zinc-300"
+                  : "bg-surface text-fg0 border-border hover:text-fg-muted"
               }`}
             >
               {f}
@@ -90,7 +90,7 @@ export default function ApprovalQueue({
       </div>
 
       {items.length === 0 ? (
-        <div className="text-xs text-zinc-500 italic py-6 text-center rounded-xl border border-dashed border-zinc-800">
+        <div className="text-xs text-fg0 italic py-6 text-center rounded-xl border border-dashed border-border">
           No {statusFilter === "all" ? "" : `${statusFilter} `}recommendations.
           Autopilot evaluates triggers (schema drift, connector health) every
           few minutes.
@@ -100,13 +100,13 @@ export default function ApprovalQueue({
           {items.map((rec) => (
             <li
               key={rec.id}
-              className="rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3 flex flex-col gap-2"
+              className="rounded-xl border border-border bg-surface-elevated px-4 py-3 flex flex-col gap-2"
             >
               <div className="flex flex-wrap items-center gap-2">
-                <span className="font-mono text-sm text-zinc-200">
+                <span className="font-mono text-sm text-fg-muted">
                   {rec.action_type}
                 </span>
-                <span className="font-mono text-xs text-zinc-500">
+                <span className="font-mono text-xs text-fg0">
                   {rec.subject}
                 </span>
                 <StatusBadge status={rec.status} />
@@ -117,17 +117,17 @@ export default function ApprovalQueue({
                   note={rec.reversibility_note}
                 />
               </div>
-              <p className="text-xs text-zinc-400 leading-relaxed">
+              <p className="text-xs text-fg-subtle leading-relaxed">
                 {rec.rationale?.summary ?? "—"}
               </p>
               {rec.reversibility_note && (
-                <p className="text-[11px] text-zinc-500">
+                <p className="text-[11px] text-fg0">
                   ↩ {rec.reversibility_note}
                 </p>
               )}
               {(rec.rationale?.evidence?.length ?? 0) > 0 && (
-                <details className="text-[11px] text-zinc-500">
-                  <summary className="cursor-pointer hover:text-zinc-300">
+                <details className="text-[11px] text-fg0">
+                  <summary className="cursor-pointer hover:text-fg-muted">
                     Evidence ({rec.rationale.evidence!.length})
                   </summary>
                   <ul className="mt-1 ml-4 list-disc flex flex-col gap-0.5 font-mono">
@@ -137,7 +137,7 @@ export default function ApprovalQueue({
                   </ul>
                 </details>
               )}
-              <div className="flex flex-wrap items-center gap-2 text-[10px] text-zinc-600">
+              <div className="flex flex-wrap items-center gap-2 text-[10px] text-fg-subtle">
                 <span>by {rec.created_by}</span>
                 <span>· {new Date(rec.created_at).toLocaleString()}</span>
                 {rec.decided_by && (
@@ -155,7 +155,7 @@ export default function ApprovalQueue({
                     value={modifyText}
                     onChange={(e) => setModifyText(e.target.value)}
                     rows={4}
-                    className="font-mono text-xs bg-zinc-950 border border-zinc-700 rounded-lg p-2 text-zinc-200"
+                    className="font-mono text-xs bg-background border border-border-strong rounded-lg p-2 text-fg-muted"
                   />
                   {modifyError && (
                     <span className="text-xs text-red-400">{modifyError}</span>
@@ -171,7 +171,7 @@ export default function ApprovalQueue({
                     <button
                       type="button"
                       onClick={() => setModifyId(null)}
-                      className="px-3 py-1 text-xs rounded bg-zinc-800 text-zinc-400 border border-zinc-700"
+                      className="px-3 py-1 text-xs rounded bg-surface-overlay text-fg-subtle border border-border-strong"
                     >
                       Cancel
                     </button>
@@ -194,7 +194,7 @@ export default function ApprovalQueue({
                       type="button"
                       disabled={busyId === rec.id}
                       onClick={() => onReject(rec.id)}
-                      className="px-3 py-1 text-xs font-semibold rounded bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 disabled:opacity-50"
+                      className="px-3 py-1 text-xs font-semibold rounded bg-surface-overlay text-fg-subtle border border-border-strong hover:bg-surface-overlay disabled:opacity-50"
                       aria-label={`Reject recommendation ${rec.id}`}
                     >
                       Reject
@@ -203,7 +203,7 @@ export default function ApprovalQueue({
                       type="button"
                       disabled={busyId === rec.id}
                       onClick={() => startModify(rec)}
-                      className="px-3 py-1 text-xs font-semibold rounded bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700 disabled:opacity-50"
+                      className="px-3 py-1 text-xs font-semibold rounded bg-surface-overlay text-fg-subtle border border-border-strong hover:bg-surface-overlay disabled:opacity-50"
                       aria-label={`Modify recommendation ${rec.id}`}
                     >
                       Modify
@@ -212,11 +212,11 @@ export default function ApprovalQueue({
                 )
               )}
               {rec.execution_result && (
-                <details className="text-[11px] text-zinc-500">
-                  <summary className="cursor-pointer hover:text-zinc-300">
+                <details className="text-[11px] text-fg0">
+                  <summary className="cursor-pointer hover:text-fg-muted">
                     Execution result
                   </summary>
-                  <pre className="mt-1 font-mono text-[10px] bg-zinc-950 border border-zinc-800 rounded p-2 overflow-x-auto">
+                  <pre className="mt-1 font-mono text-[10px] bg-background border border-border rounded p-2 overflow-x-auto">
                     {JSON.stringify(rec.execution_result, null, 2)}
                   </pre>
                 </details>

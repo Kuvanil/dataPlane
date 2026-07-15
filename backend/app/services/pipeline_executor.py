@@ -358,6 +358,31 @@ def _update_run_status(db: Session, run_id: int, status: str,
         run.error_message = error
     db.commit()
 
+    # Notify-out (aci_integration_tasks #7): terminal run statuses reuse the
+    # same opt-in fan-out as approval-queue events — success and failure are
+    # independently configurable keys (most teams want failure alerts only).
+    # Fire-and-forget after commit; a notify failure never touches run state.
+    if status in ("succeeded", "failed"):
+        from app.services.notification_service import dispatch_notify_out
+        event_key = "pipeline:run_success" if status == "succeeded" else "pipeline:run_failure"
+        drift_blocked = status == "failed" and error and "blocked by schema drift" in error
+        if drift_blocked:
+            # Drift-impact is its own independently-configurable event.
+            dispatch_notify_out(
+                db, event_key="pipeline:drift_impact",
+                title=f"Pipeline run #{run_id} blocked by schema drift",
+                body=(error or "")[:500],
+                link=f"{settings.DATAPLANE_BASE_URL}/dashboard/pipelines",
+            )
+        else:
+            dispatch_notify_out(
+                db, event_key=event_key,
+                title=f"Pipeline run #{run_id} {status}"
+                      + (f" ({rows} rows)" if rows is not None else ""),
+                body=(error or "")[:500],
+                link=f"{settings.DATAPLANE_BASE_URL}/dashboard/pipelines",
+            )
+
 
 def _fail_run(db: Session, run_id: int, error: str) -> None:
     _update_run_status(db, run_id, "failed", error=error)

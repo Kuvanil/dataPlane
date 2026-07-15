@@ -31,27 +31,27 @@ export default function PublishDialog({
         if (e.target === e.currentTarget && !publishing) onCancel();
       }}
     >
-      <div className="w-full max-w-md rounded-xl bg-zinc-900 border border-zinc-800 p-6 shadow-2xl">
-        <h2 className="text-lg font-semibold text-zinc-100 mb-1">
+      <div className="w-full max-w-md rounded-xl bg-surface border border-border p-6 shadow-2xl">
+        <h2 className="text-lg font-semibold text-fg mb-1">
           Publish new version
         </h2>
-        <p className="text-xs text-zinc-500 mb-4">
+        <p className="text-xs text-fg0 mb-4">
           This creates an immutable version that the Pipelines module can consume.
         </p>
         <ul className="text-xs space-y-1 mb-4">
           <li className="flex justify-between">
-            <span className="text-zinc-400">Next version label</span>
-            <span className="font-mono text-zinc-200">v{nextVersion}</span>
+            <span className="text-fg-subtle">Next version label</span>
+            <span className="font-mono text-fg-muted">v{nextVersion}</span>
           </li>
           <li className="flex justify-between">
-            <span className="text-zinc-400">Blocking issues</span>
+            <span className="text-fg-subtle">Blocking issues</span>
             <span className={blockingCount === 0 ? "text-emerald-400" : "text-red-400"}>
               {blockingCount}
             </span>
           </li>
           <li className="flex justify-between">
-            <span className="text-zinc-400">Warnings</span>
-            <span className={warningCount === 0 ? "text-zinc-500" : "text-amber-400"}>
+            <span className="text-fg-subtle">Warnings</span>
+            <span className={warningCount === 0 ? "text-fg0" : "text-amber-400"}>
               {warningCount}
             </span>
           </li>
@@ -66,7 +66,7 @@ export default function PublishDialog({
             type="button"
             onClick={onCancel}
             disabled={publishing}
-            className="px-4 py-2 text-sm text-zinc-400 hover:text-zinc-200 rounded-lg"
+            className="px-4 py-2 text-sm text-fg-subtle hover:text-fg-muted rounded-lg"
           >
             Cancel
           </button>

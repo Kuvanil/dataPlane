@@ -2,11 +2,11 @@ fastapi==0.110.0
 uvicorn==0.27.1
 sqlalchemy==2.0.28
 psycopg2-binary==2.9.9
-pydantic==2.6.3
+pydantic>=2.11.3,<3
 pydantic-settings==2.2.1
 langchain==0.1.12
 langchain-community==0.0.28
-ollama==0.1.7
+ollama
 requests==2.31.0
 python-dotenv==1.0.1
 pymysql==1.1.0
@@ -21,3 +21,5 @@ bcrypt==3.2.2
 cachetools==7.1.4
 sqlparse==0.5.5
 croniter==2.0.5
+aci-sdk==1.0.0b4
+keeper-secrets-manager-core==17.0.0

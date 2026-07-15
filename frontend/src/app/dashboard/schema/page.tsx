@@ -34,10 +34,10 @@ export default function SchemaIntelPage() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="p-4 border-b border-zinc-800 bg-zinc-900/40 backdrop-blur-sm flex flex-wrap justify-between items-center gap-3">
+      <div className="p-4 border-b border-border bg-surface-elevated backdrop-blur-sm flex flex-wrap justify-between items-center gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-zinc-200">Schema Intel</h3>
-          <p className="text-xs text-zinc-500">
+          <h3 className="text-lg font-semibold text-fg-muted">Schema Intel</h3>
+          <p className="text-xs text-fg0">
             Browse the discovered catalog, profile columns, review PII classifications, and track drift
           </p>
         </div>
@@ -58,7 +58,7 @@ export default function SchemaIntelPage() {
                   type="button"
                   onClick={() => void c.scanConnection()}
                   disabled={c.scanning || c.connectionId === null}
-                  className="px-3 py-2 text-xs font-semibold text-zinc-300 border border-zinc-700 rounded-lg hover:bg-zinc-800/60 disabled:opacity-50"
+                  className="px-3 py-2 text-xs font-semibold text-fg-muted border border-border-strong rounded-lg hover:bg-surface-overlay disabled:opacity-50"
                 >
                   {c.scanning ? "Scanning…" : "Scan catalog"}
                 </button>
@@ -86,16 +86,16 @@ export default function SchemaIntelPage() {
         />
 
         {c.catalogLoading ? (
-          <div className="text-xs text-zinc-500">Loading catalog…</div>
+          <div className="text-xs text-fg0">Loading catalog…</div>
         ) : c.catalogError ? (
           <div className="text-xs text-red-400">{c.catalogError}</div>
         ) : c.tables.length === 0 ? (
           <div className="text-center py-10">
             <div className="text-5xl mb-3">🗂️</div>
-            <h2 className="text-lg font-semibold text-zinc-200 mb-2">No catalog yet</h2>
-            <p className="text-sm text-zinc-500">
+            <h2 className="text-lg font-semibold text-fg-muted mb-2">No catalog yet</h2>
+            <p className="text-sm text-fg0">
               {canManage
-                ? <>Click <span className="text-zinc-300">Scan catalog</span> to discover this connection&apos;s tables and columns.</>
+                ? <>Click <span className="text-fg-muted">Scan catalog</span> to discover this connection&apos;s tables and columns.</>
                 : "This connection hasn't been scanned yet."}
             </p>
           </div>

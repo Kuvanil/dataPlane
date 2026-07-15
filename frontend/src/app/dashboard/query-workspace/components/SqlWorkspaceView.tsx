@@ -203,11 +203,11 @@ const SqlWorkspaceView = forwardRef<SqlWorkspaceViewHandle, SqlWorkspaceViewProp
   return (
     <div className="flex h-full">
       <div className="flex-1 flex flex-col min-w-0">
-        <div className="p-4 border-b border-zinc-800 bg-zinc-900/40 backdrop-blur-sm flex flex-col gap-3">
+        <div className="p-4 border-b border-border bg-surface-elevated backdrop-blur-sm flex flex-col gap-3">
           <div className="flex justify-between items-center">
             <div>
-              <h3 className="text-lg font-semibold text-zinc-200">Query Studio</h3>
-              <p className="text-xs text-zinc-500">Write SQL, run it against a connection, export the results.</p>
+              <h3 className="text-lg font-semibold text-fg-muted">Query Studio</h3>
+              <p className="text-xs text-fg0">Write SQL, run it against a connection, export the results.</p>
             </div>
             <ConnectionSelector connections={connections} value={connectionId} onChange={setConnectionId} />
           </div>
@@ -231,14 +231,14 @@ const SqlWorkspaceView = forwardRef<SqlWorkspaceViewHandle, SqlWorkspaceViewProp
             <button
               onClick={exportCsv}
               disabled={!sqlText.trim() || connectionId == null}
-              className="px-3 py-2 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg disabled:opacity-50"
+              className="px-3 py-2 text-xs bg-surface-overlay hover:bg-surface-overlay text-fg-muted rounded-lg disabled:opacity-50"
             >
               Export CSV
             </button>
             <button
               onClick={saveCurrentQuery}
               disabled={!sqlText.trim() || connectionId == null}
-              className="px-3 py-2 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg disabled:opacity-50"
+              className="px-3 py-2 text-xs bg-surface-overlay hover:bg-surface-overlay text-fg-muted rounded-lg disabled:opacity-50"
             >
               Save
             </button>
@@ -260,7 +260,7 @@ const SqlWorkspaceView = forwardRef<SqlWorkspaceViewHandle, SqlWorkspaceViewProp
           {result ? (
             <ResultsTable result={result} page={page} onPageChange={changePage} />
           ) : (
-            <div className="flex-1 h-full flex flex-col items-center justify-center text-zinc-500 gap-3 pt-16">
+            <div className="flex-1 h-full flex flex-col items-center justify-center text-fg0 gap-3 pt-16">
               <span className="text-5xl">🗄️</span>
               <span className="text-sm">Write a query and run it to see results here.</span>
             </div>
@@ -268,17 +268,17 @@ const SqlWorkspaceView = forwardRef<SqlWorkspaceViewHandle, SqlWorkspaceViewProp
         </div>
       </div>
 
-      <div className="w-72 border-l border-zinc-800 flex flex-col">
-        <div className="flex border-b border-zinc-800">
+      <div className="w-72 border-l border-border flex flex-col">
+        <div className="flex border-b border-border">
           <button
             onClick={() => setSidebarTab("history")}
-            className={`flex-1 py-2 text-xs ${sidebarTab === "history" ? "text-zinc-100 border-b-2 border-blue-500" : "text-zinc-500"}`}
+            className={`flex-1 py-2 text-xs ${sidebarTab === "history" ? "text-fg border-b-2 border-blue-500" : "text-fg0"}`}
           >
             History
           </button>
           <button
             onClick={() => setSidebarTab("saved")}
-            className={`flex-1 py-2 text-xs ${sidebarTab === "saved" ? "text-zinc-100 border-b-2 border-blue-500" : "text-zinc-500"}`}
+            className={`flex-1 py-2 text-xs ${sidebarTab === "saved" ? "text-fg border-b-2 border-blue-500" : "text-fg0"}`}
           >
             Saved
           </button>

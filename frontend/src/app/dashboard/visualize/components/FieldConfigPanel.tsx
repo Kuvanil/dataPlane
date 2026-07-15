@@ -42,7 +42,7 @@ export default function FieldConfigPanel({
   };
 
   if (catalogLoading) {
-    return <div className="text-xs text-zinc-500">Loading catalog…</div>;
+    return <div className="text-xs text-fg0">Loading catalog…</div>;
   }
 
   if (catalogTables.length === 0) {
@@ -56,12 +56,12 @@ export default function FieldConfigPanel({
 
   return (
     <div className="flex flex-col gap-4">
-      <label className="text-xs text-zinc-400">
+      <label className="text-xs text-fg-subtle">
         Table
         <select
           value={tableName ?? ""}
           onChange={(e) => onTableChange(e.target.value)}
-          className="mt-1 w-full px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm text-zinc-100 focus:outline-none focus:border-blue-500"
+          className="mt-1 w-full px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm text-fg focus:outline-none focus:border-blue-500"
         >
           {catalogTables.map((t) => (
             <option key={t.id} value={t.table_name}>{t.table_name}</option>
@@ -70,7 +70,7 @@ export default function FieldConfigPanel({
       </label>
 
       <div>
-        <div className="text-xs text-zinc-400 mb-1.5">Dimensions (group by)</div>
+        <div className="text-xs text-fg-subtle mb-1.5">Dimensions (group by)</div>
         <div className="flex flex-wrap gap-1.5">
           {columns.map((c) => (
             <button
@@ -81,7 +81,7 @@ export default function FieldConfigPanel({
                 "px-2 py-1 text-[11px] rounded-lg border",
                 dimensions.includes(c.column_name)
                   ? "bg-blue-600/20 border-blue-500/40 text-blue-300"
-                  : "border-zinc-700 text-zinc-400 hover:bg-zinc-800/60",
+                  : "border-border-strong text-fg-subtle hover:bg-surface-overlay",
               )}
             >
               {c.column_name}
@@ -92,7 +92,7 @@ export default function FieldConfigPanel({
 
       <div>
         <div className="flex items-center justify-between mb-1.5">
-          <span className="text-xs text-zinc-400">Measures</span>
+          <span className="text-xs text-fg-subtle">Measures</span>
           <button
             type="button"
             onClick={addMeasure}
@@ -107,14 +107,14 @@ export default function FieldConfigPanel({
               <select
                 value={m.aggregation}
                 onChange={(e) => updateMeasure(i, { aggregation: e.target.value as Aggregation })}
-                className="px-2 py-1.5 text-xs rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200"
+                className="px-2 py-1.5 text-xs rounded-lg bg-surface-overlay border border-border-strong text-fg-muted"
               >
                 {AGGREGATIONS.map((a) => <option key={a} value={a}>{a}</option>)}
               </select>
               <select
                 value={m.field}
                 onChange={(e) => updateMeasure(i, { field: e.target.value })}
-                className="flex-1 px-2 py-1.5 text-xs rounded-lg bg-zinc-800 border border-zinc-700 text-zinc-200"
+                className="flex-1 px-2 py-1.5 text-xs rounded-lg bg-surface-overlay border border-border-strong text-fg-muted"
               >
                 {columns.map((c) => <option key={c.id} value={c.column_name}>{c.column_name}</option>)}
               </select>
@@ -122,14 +122,14 @@ export default function FieldConfigPanel({
                 type="button"
                 onClick={() => removeMeasure(i)}
                 aria-label="Remove measure"
-                className="text-zinc-500 hover:text-red-400 text-xs px-1"
+                className="text-fg0 hover:text-red-400 text-xs px-1"
               >
                 ✕
               </button>
             </div>
           ))}
           {measures.length === 0 && (
-            <p className="text-[11px] text-zinc-500">No measures yet — add one to aggregate values.</p>
+            <p className="text-[11px] text-fg0">No measures yet — add one to aggregate values.</p>
           )}
         </div>
       </div>

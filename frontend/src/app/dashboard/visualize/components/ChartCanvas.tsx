@@ -37,7 +37,7 @@ export default function ChartCanvas({ chartType, result, dimensions, measures, l
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-2 text-zinc-500">
+        <div className="flex flex-col items-center gap-2 text-fg0">
           <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
           <span className="text-xs">Running query…</span>
         </div>
@@ -58,7 +58,7 @@ export default function ChartCanvas({ chartType, result, dimensions, measures, l
   if (!result || data.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center p-10">
-        <div className="max-w-sm text-center text-sm text-zinc-500">
+        <div className="max-w-sm text-center text-sm text-fg0">
           {!result
             ? "Select fields to build your chart."
             : "No data matches your filters."}
@@ -73,10 +73,10 @@ export default function ChartCanvas({ chartType, result, dimensions, measures, l
     return (
       <div ref={containerRef} className="flex-1 flex items-center justify-center">
         <div className="text-center">
-          <div className="text-5xl font-bold text-zinc-100">
+          <div className="text-5xl font-bold text-fg">
             {typeof value === "number" ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : String(value)}
           </div>
-          <div className="text-xs text-zinc-500 mt-2 uppercase tracking-wider">{key}</div>
+          <div className="text-xs text-fg0 mt-2 uppercase tracking-wider">{key}</div>
         </div>
       </div>
     );
@@ -87,15 +87,15 @@ export default function ChartCanvas({ chartType, result, dimensions, measures, l
       <div ref={containerRef} className="flex-1 overflow-auto p-2">
         <table className="w-full text-xs">
           <thead>
-            <tr className="text-[10px] uppercase text-zinc-500 border-b border-zinc-800">
+            <tr className="text-[10px] uppercase text-fg0 border-b border-border">
               {result.columns.map((c) => <th key={c} className="text-left px-3 py-2">{c}</th>)}
             </tr>
           </thead>
           <tbody>
             {result.rows.map((row, i) => (
-              <tr key={i} className="border-b border-zinc-800/60">
+              <tr key={i} className="border-b border-border/60">
                 {row.map((v, j) => (
-                  <td key={j} className="px-3 py-1.5 text-zinc-300">{v === null ? "—" : String(v)}</td>
+                  <td key={j} className="px-3 py-1.5 text-fg-muted">{v === null ? "—" : String(v)}</td>
                 ))}
               </tr>
             ))}

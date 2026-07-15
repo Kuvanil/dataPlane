@@ -66,7 +66,10 @@ def ask(
     )
     history = [{"role": m.role, "content": m.content} for m in prior]
 
-    result = askdata_pipeline_service.ask(db, conn, req.question, user.role, history)
+    result = askdata_pipeline_service.ask(
+        db, conn, req.question, user.role, history,
+        actor=user.email, session_id=session_id,
+    )
 
     db.add(ChatMessage(
         session_id=session_id, role="user", content=req.question, connection_id=conn.id,
@@ -76,6 +79,25 @@ def ask(
         session_id=session_id, role="assistant", content=assistant_content,
         connection_id=conn.id, sql_text=result.get("sql"), row_count=result.get("row_count"),
     ))
+
+    # Intent gate (agentic_dba_tasks #1): audit the classification itself so
+    # its accuracy can be reviewed from the audit log, not just app logs.
+    emit_audit_event(
+        db,
+        event_type="askdata.intent_classified",
+        actor=user.email,
+        module="askdata",
+        target_type="connection",
+        target_id=conn.id,
+        target_name=conn.name,
+        summary=f"intent={result.get('intent')} for: {req.question[:150]}",
+        outcome="success",
+        metadata={
+            "intent": result.get("intent"),
+            "confidence": result.get("intent_confidence"),
+            "matched_signal": result.get("intent_signal"),
+        },
+    )
 
     outcome = "failure" if result.get("error") else "success"
     emit_audit_event(

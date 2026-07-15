@@ -54,7 +54,7 @@ export default function ChartTypeSelector({ value, onChange, dimensionCount, mea
               "flex flex-col items-center gap-1 px-3 py-2 rounded-lg border text-xs min-w-[64px]",
               value === ct.type
                 ? "bg-blue-600/20 border-blue-500/40 text-blue-300"
-                : "border-zinc-700 text-zinc-400 hover:bg-zinc-800/60",
+                : "border-border-strong text-fg-subtle hover:bg-surface-overlay",
               !compatible && "opacity-30 cursor-not-allowed",
             )}
           >

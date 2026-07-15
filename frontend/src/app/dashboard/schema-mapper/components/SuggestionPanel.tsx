@@ -31,12 +31,12 @@ export default function SuggestionPanel({
   return (
     <section
       aria-label="AI suggestions"
-      className="border-t border-zinc-800 bg-zinc-900/30"
+      className="border-t border-border bg-surface-elevated"
     >
       <div className="px-5 py-2.5 flex items-center justify-between">
         <div>
-          <h3 className="text-sm font-semibold text-zinc-200">AI Suggestions</h3>
-          <p className="text-[10px] text-zinc-500 uppercase tracking-wider">
+          <h3 className="text-sm font-semibold text-fg-muted">AI Suggestions</h3>
+          <p className="text-[10px] text-fg0 uppercase tracking-wider">
             {pending.length} pending · {decided.length} decided
           </p>
         </div>
@@ -54,8 +54,8 @@ export default function SuggestionPanel({
       </div>
       <div className="px-5 pb-3 max-h-72 overflow-y-auto">
         {pending.length === 0 && decided.length === 0 ? (
-          <div className="text-xs text-zinc-500 italic py-2">
-            No suggestions yet. Click <span className="text-zinc-300">Get AI Suggestions</span> to generate candidates for unmapped target columns.
+          <div className="text-xs text-fg0 italic py-2">
+            No suggestions yet. Click <span className="text-fg-muted">Get AI Suggestions</span> to generate candidates for unmapped target columns.
           </div>
         ) : (
           <ul className="flex flex-col gap-1.5">
@@ -69,13 +69,13 @@ export default function SuggestionPanel({
                     <span className="font-mono text-blue-300 truncate">
                       {truncate(`${s.source_table}.${s.source_column}`, 30)}
                     </span>
-                    <span className="text-zinc-500">→</span>
+                    <span className="text-fg0">→</span>
                     <span className="font-mono text-indigo-300 truncate">
                       {truncate(`${s.target_table}.${s.target_column}`, 30)}
                     </span>
                   </div>
                   {s.reason && (
-                    <p className="text-[10px] text-zinc-500 mt-1 truncate">
+                    <p className="text-[10px] text-fg0 mt-1 truncate">
                       {s.reason}
                     </p>
                   )}
@@ -114,7 +114,7 @@ export default function SuggestionPanel({
                       <button
                         type="button"
                         onClick={() => onReject(s.id)}
-                        className="px-2 py-1 text-[11px] font-semibold rounded bg-zinc-800 text-zinc-400 border border-zinc-700 hover:bg-zinc-700"
+                        className="px-2 py-1 text-[11px] font-semibold rounded bg-surface-overlay text-fg-subtle border border-border-strong hover:bg-surface-overlay"
                         aria-label="Reject suggestion"
                       >
                         Reject
@@ -125,7 +125,7 @@ export default function SuggestionPanel({
               </li>
             ))}
             {decided.length > 0 && (
-              <li className="mt-2 mb-1 text-[10px] uppercase tracking-wider text-zinc-500 font-semibold">
+              <li className="mt-2 mb-1 text-[10px] uppercase tracking-wider text-fg0 font-semibold">
                 Decided
               </li>
             )}
@@ -136,7 +136,7 @@ export default function SuggestionPanel({
                   "flex items-center justify-between gap-2 px-3 py-1.5 rounded text-[11px]",
                   s.status === "accepted"
                     ? "bg-emerald-500/5 text-emerald-300/80"
-                    : "bg-zinc-900/40 text-zinc-500",
+                    : "bg-surface-elevated text-fg0",
                 )}
               >
                 <span className="font-mono truncate">

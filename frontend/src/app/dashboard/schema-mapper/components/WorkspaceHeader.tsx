@@ -78,7 +78,7 @@ export default function WorkspaceHeader({
   };
 
   return (
-    <div className="px-5 py-3 border-b border-zinc-800 bg-zinc-900/40 flex flex-wrap items-center justify-between gap-3">
+    <div className="px-5 py-3 border-b border-border bg-surface-elevated flex flex-wrap items-center justify-between gap-3">
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           {editing ? (
@@ -98,7 +98,7 @@ export default function WorkspaceHeader({
                 }
               }}
               aria-label="Rename mapping"
-              className="text-base font-semibold text-zinc-100 bg-zinc-800 border border-blue-500/40 rounded px-2 py-0.5 min-w-0 max-w-md focus:outline-none focus:border-blue-500"
+              className="text-base font-semibold text-fg bg-surface-overlay border border-blue-500/40 rounded px-2 py-0.5 min-w-0 max-w-md focus:outline-none focus:border-blue-500"
             />
           ) : (
             <>
@@ -108,7 +108,7 @@ export default function WorkspaceHeader({
                   The ✎ button is a sibling, not heading content, so screen
                   readers don't read it as part of the heading
                   (review_schema_mapper_round2 #9). */}
-              <h2 className="text-base font-semibold text-zinc-100 truncate min-w-0">
+              <h2 className="text-base font-semibold text-fg truncate min-w-0">
                 {mapping.name}
               </h2>
               {canEdit && (
@@ -117,7 +117,7 @@ export default function WorkspaceHeader({
                   onClick={startEdit}
                   aria-label="Rename mapping"
                   title="Rename mapping"
-                  className="shrink-0 text-zinc-500 hover:text-zinc-200 transition-colors text-xs"
+                  className="shrink-0 text-fg0 hover:text-fg-muted transition-colors text-xs"
                 >
                   ✎
                 </button>
@@ -148,7 +148,7 @@ export default function WorkspaceHeader({
             </span>
           )}
         </div>
-        <p className="text-[11px] text-zinc-500 mt-0.5">
+        <p className="text-[11px] text-fg0 mt-0.5">
           #{mapping.id} · {mapping.edges.length} edge
           {mapping.edges.length === 1 ? "" : "s"} · created by {mapping.created_by}
         </p>
@@ -158,7 +158,7 @@ export default function WorkspaceHeader({
           type="button"
           onClick={onValidate}
           disabled={validating}
-          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700 disabled:opacity-50"
+          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface-overlay text-fg-muted hover:bg-surface-overlay disabled:opacity-50"
           aria-label="Validate mapping"
         >
           {validating ? "Validating…" : "✓ Validate"}
@@ -166,7 +166,7 @@ export default function WorkspaceHeader({
         <button
           type="button"
           onClick={onExport}
-          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-zinc-800 text-zinc-200 hover:bg-zinc-700"
+          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-surface-overlay text-fg-muted hover:bg-surface-overlay"
           aria-label="Export published mapping"
         >
           ⬇ Export
@@ -191,7 +191,7 @@ export default function WorkspaceHeader({
         )}
         {!canEdit && role !== null && (
           <span
-            className="text-[11px] text-zinc-500 italic"
+            className="text-[11px] text-fg0 italic"
             title="Your role cannot edit this mapping."
           >
             Read-only ({role})

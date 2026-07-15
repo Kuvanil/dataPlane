@@ -42,14 +42,14 @@ export default function ExportButton({ filters }: { filters: AuditFilters }) {
       <button
         onClick={() => doExport("csv")}
         disabled={busy !== null}
-        className="px-3 py-2 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg disabled:opacity-50"
+        className="px-3 py-2 text-xs bg-surface-overlay hover:bg-surface-overlay text-fg-muted rounded-lg disabled:opacity-50"
       >
         {busy === "csv" ? "Exporting…" : "Export CSV"}
       </button>
       <button
         onClick={() => doExport("json")}
         disabled={busy !== null}
-        className="px-3 py-2 text-xs bg-zinc-800 hover:bg-zinc-700 text-zinc-200 rounded-lg disabled:opacity-50"
+        className="px-3 py-2 text-xs bg-surface-overlay hover:bg-surface-overlay text-fg-muted rounded-lg disabled:opacity-50"
       >
         {busy === "json" ? "Exporting…" : "Export JSON"}
       </button>

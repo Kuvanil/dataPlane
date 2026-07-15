@@ -340,7 +340,7 @@ export default function Canvas({
       aria-label="Schema mapping canvas"
     >
       {loading ? (
-        <div className="flex items-center justify-center h-64 text-sm text-zinc-500">
+        <div className="flex items-center justify-center h-64 text-sm text-fg0">
           Loading schemas…
         </div>
       ) : error ? (
@@ -410,7 +410,7 @@ export default function Canvas({
       {/* Legend for the row glyphs (key, NOT-NULL star, staging badges) —
           previously unexplained anywhere (review_schema_mapper_round2 #10). */}
       {!loading && !error && (
-        <div className="mt-3 text-center text-[10px] text-zinc-500">
+        <div className="mt-3 text-center text-[10px] text-fg0">
           🔑 primary key · <span className="text-amber-400 font-semibold">*</span> NOT NULL
           {canEdit && (
             <> · click source columns to stage them (numbers = concat order), then click a target — Esc clears</>
@@ -512,7 +512,7 @@ function SchemaPanel({
     <div className="w-80 shrink-0">
       <div className={classNames("text-xs font-semibold mb-2 flex items-center gap-2", accent)}>
         <span>📥 {title}</span>
-        {connId && <span className="text-zinc-500 font-normal">#{connId}</span>}
+        {connId && <span className="text-fg0 font-normal">#{connId}</span>}
         {side === "source" && (selectedOrder?.size ?? 0) > 0 && (
           <span className="ml-auto flex items-center gap-1.5 px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-violet-500/15 text-violet-300 border border-violet-500/30">
             {selectedOrder!.size} selected
@@ -535,9 +535,9 @@ function SchemaPanel({
           </span>
         )}
       </div>
-      <div className="flex flex-col rounded-xl border border-zinc-800 bg-zinc-900/40 p-2 min-h-[200px]">
+      <div className="flex flex-col rounded-xl border border-border bg-surface-elevated p-2 min-h-[200px]">
         {nodes.length === 0 ? (
-          <div className="text-[11px] text-zinc-500 italic px-2 py-3">
+          <div className="text-[11px] text-fg0 italic px-2 py-3">
             No columns.
           </div>
         ) : (
@@ -649,7 +649,7 @@ function SchemaPanel({
                   isSelected && "border-violet-500/50 bg-violet-500/10",
                   isMapped && !isSelected
                     ? "border-emerald-500/30 bg-emerald-500/5"
-                    : "border-transparent hover:bg-zinc-800/40",
+                    : "border-transparent hover:bg-surface-overlay",
                   isHover && "border-blue-500/40 bg-blue-500/10",
                   onDragStart ? "cursor-grab" : "",
                   stageableSource ? "cursor-pointer" : "",
@@ -676,12 +676,12 @@ function SchemaPanel({
                       {stagedPos}
                     </span>
                   )}
-                  <span className="text-zinc-400 mr-1">{n.table}.</span>
+                  <span className="text-fg-subtle mr-1">{n.table}.</span>
                   <span className={classNames(side === "source" ? "text-blue-200" : "text-indigo-200", "truncate")}>
                     {n.column}
                   </span>
                 </span>
-                <span className="text-zinc-600 text-[10px]">
+                <span className="text-fg-subtle text-[10px]">
                   {n.type}
                   {/* TRD FR1: surface nullability in the raw schema panels.
                       NOT NULL columns get a small `*` suffix so the
@@ -732,7 +732,7 @@ function ConnectorOverlay({
   const width = 160;
   return (
     <div className="w-40 shrink-0 relative">
-      <div className="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold text-center mb-2">
+      <div className="text-[10px] uppercase tracking-wider text-fg0 font-semibold text-center mb-2">
         Mappings
       </div>
       <svg width={width} height={height} role="img" aria-label="Mapping connectors">

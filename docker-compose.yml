@@ -21,6 +21,26 @@ x-backend-env: &backend-env
   ADMIN_DEFAULT_PASSWORD: ${ADMIN_DEFAULT_PASSWORD:-admin123}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   SCHEMA_DRIFT_INTERVAL_MINUTES: ${SCHEMA_DRIFT_INTERVAL_MINUTES:-60}
+  # ACI.dev integration (requirements-specs-v4). ACI_API_KEY has no default
+  # on purpose — unset means the integration is disabled, never a baked-in
+  # secret. Bring the self-hosted ACI services up with:
+  #   docker compose --profile aci up -d
+  ACI_BASE_URL: ${ACI_BASE_URL:-http://aci:8000}
+  ACI_API_KEY: ${ACI_API_KEY:-}
+  ACI_PORTAL_URL: ${ACI_PORTAL_URL:-http://localhost:3001}
+  ACI_LINKED_ACCOUNT_OWNER_ID: ${ACI_LINKED_ACCOUNT_OWNER_ID:-dataplane}
+  ACI_SLACK_INTERNAL_CHANNEL: ${ACI_SLACK_INTERNAL_CHANNEL:-}
+  DATAPLANE_BASE_URL: ${DATAPLANE_BASE_URL:-http://localhost:3000}
+  # Connector credential vaulting (requirements-specs-v5). No baked-in key:
+  # unset = legacy mode (secrets stay in config, responses stay redacted).
+  # aes256: generate a key with `openssl rand -base64 32` and set it in .env.
+  # keeper: mount the KSM bootstrap config file (never commit it) and point
+  # KSM_CONFIG_PATH at the mounted path.
+  SECRET_MANAGER_BACKEND: ${SECRET_MANAGER_BACKEND:-aes256}
+  SECRETS_ENCRYPTION_KEY: ${SECRETS_ENCRYPTION_KEY:-}
+  SECRETS_ENCRYPTION_KEY_PREVIOUS: ${SECRETS_ENCRYPTION_KEY_PREVIOUS:-}
+  KSM_CONFIG_PATH: ${KSM_CONFIG_PATH:-}
+  KSM_FOLDER_UID: ${KSM_FOLDER_UID:-}
 
 services:
   # ── PostgreSQL ─────────────────────────────────────────────
@@ -181,7 +201,73 @@ services:
         reservations:
           memory: 32m
 
+  # ── ACI.dev self-hosted tool-calling platform (requirements-specs-v4) ──
+  # Optional profile: `docker compose --profile aci up -d`. The default
+  # stack is unchanged without the flag. ACI's backend is built from its
+  # own repo (Apache 2.0) — clone it first:
+  #   git clone https://github.com/aipotheosis-labs/aci vendor/aci
+  # then copy vendor/aci/backend/.env.example → .env.local per its README
+  # (needs SERVER_OPENAI_API_KEY for its embedding-based tool search) and
+  # seed it: docker compose --profile aci exec aci ./scripts/seed_db.sh
+  # Self-hosted ACI ships a small starter tool catalog (Brave Search,
+  # Hacker News, Gmail); the full 600+ catalog is hosted-only.
+  aci-db:
+    image: pgvector/pgvector:pg16
+    container_name: dataplane-aci-db
+    profiles: ["aci"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${ACI_DB_USER:-aci}
+      POSTGRES_PASSWORD: ${ACI_DB_PASSWORD:-aci}
+      POSTGRES_DB: aci
+    volumes:
+      - acidata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U aci"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+        reservations:
+          memory: 128m
+
+  aci:
+    build:
+      context: ./vendor/aci/backend
+      dockerfile: Dockerfile
+    container_name: dataplane-aci
+    profiles: ["aci"]
+    restart: unless-stopped
+    ports:
+      - "8010:8000"
+    environment:
+      SERVER_DB_HOST: aci-db
+      SERVER_DB_PORT: "5432"
+      SERVER_DB_USER: ${ACI_DB_USER:-aci}
+      SERVER_DB_PASSWORD: ${ACI_DB_PASSWORD:-aci}
+      SERVER_DB_NAME: aci
+      SERVER_OPENAI_API_KEY: ${ACI_SERVER_OPENAI_API_KEY:-}
+    depends_on:
+      aci-db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/v1/health')\" || python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000')\" || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+        reservations:
+          memory: 256m
+
 volumes:
   pgdata:
   redisdata:
   shared_data:
+  acidata:

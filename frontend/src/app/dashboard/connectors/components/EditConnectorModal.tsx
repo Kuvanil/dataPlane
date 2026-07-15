@@ -47,10 +47,10 @@ export default function EditConnectorModal({ connector, onClose, onSaved }: Edit
 
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">
-      <div className="w-full max-w-md p-6 rounded-2xl bg-zinc-900 border border-zinc-800 flex flex-col gap-4 shadow-2xl">
+      <div className="w-full max-w-md p-6 rounded-2xl bg-surface border border-border flex flex-col gap-4 shadow-2xl">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-zinc-200">Edit Connector</h3>
-          <span className="text-xs text-zinc-500 font-mono bg-zinc-800 px-2 py-1 rounded-md">
+          <h3 className="text-lg font-semibold text-fg-muted">Edit Connector</h3>
+          <span className="text-xs text-fg0 font-mono bg-surface-overlay px-2 py-1 rounded-md">
             {connector.type}
           </span>
         </div>
@@ -61,56 +61,56 @@ export default function EditConnectorModal({ connector, onClose, onSaved }: Edit
 
         <form onSubmit={handleSave} className="flex flex-col gap-3">
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-400">Connector Name</label>
+            <label className="text-xs text-fg-subtle">Connector Name</label>
             <input
               value={name}
               onChange={e => setName(e.target.value)}
               required
               placeholder="My_Database"
-              className="px-3 py-2 rounded-lg bg-zinc-800 border border-zinc-700 text-sm focus:outline-none focus:border-blue-500 text-zinc-200"
+              className="px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm focus:outline-none focus:border-blue-500 text-fg-muted"
             />
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-400">Type</label>
+            <label className="text-xs text-fg-subtle">Type</label>
             <input
               value={connector.type}
               disabled
-              className="px-3 py-2 rounded-lg bg-zinc-800/50 border border-zinc-700 text-sm text-zinc-500 cursor-not-allowed"
+              className="px-3 py-2 rounded-lg bg-surface-overlay border border-border-strong text-sm text-fg0 cursor-not-allowed"
             />
-            <span className="text-[10px] text-zinc-600 mt-0.5">Type cannot be changed after creation.</span>
+            <span className="text-[10px] text-fg-subtle mt-0.5">Type cannot be changed after creation.</span>
           </div>
 
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-zinc-400">Config JSON</label>
+            <label className="text-xs text-fg-subtle">Config JSON</label>
             <textarea
               value={configJson}
               onChange={e => setConfigJson(e.target.value)}
               required
               rows={4}
-              className="px-3 py-2 font-mono text-xs rounded-lg bg-zinc-800 border border-zinc-700 focus:outline-none focus:border-blue-500 text-zinc-300"
+              className="px-3 py-2 font-mono text-xs rounded-lg bg-surface-overlay border border-border-strong focus:outline-none focus:border-blue-500 text-fg-muted"
             />
           </div>
 
-          <div className="border-t border-zinc-800 pt-3">
-            <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer">
+          <div className="border-t border-border pt-3">
+            <label className="flex items-center gap-2 text-xs text-fg-subtle cursor-pointer">
               <input
                 type="checkbox"
                 checked={rotateSecret}
                 onChange={e => setRotateSecret(e.target.checked)}
-                className="rounded border-zinc-600 bg-zinc-800"
+                className="rounded border-border-strong bg-surface-overlay"
               />
               Rotate credentials
             </label>
             {rotateSecret && (
               <div className="mt-2 flex flex-col gap-1">
-                <label className="text-xs text-zinc-400">New credentials (JSON)</label>
+                <label className="text-xs text-fg-subtle">New credentials (JSON)</label>
                 <textarea
                   value={newSecret}
                   onChange={e => setNewSecret(e.target.value)}
                   rows={2}
                   placeholder='{"password": "new_secret_value"}'
-                  className="px-3 py-2 font-mono text-xs rounded-lg bg-zinc-800 border border-zinc-700 focus:outline-none focus:border-blue-500 text-zinc-300"
+                  className="px-3 py-2 font-mono text-xs rounded-lg bg-surface-overlay border border-border-strong focus:outline-none focus:border-blue-500 text-fg-muted"
                 />
               </div>
             )}
@@ -120,7 +120,7 @@ export default function EditConnectorModal({ connector, onClose, onSaved }: Edit
             <button
               type="button"
               onClick={onClose}
-              className="flex-1 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-xl text-sm font-semibold text-zinc-400"
+              className="flex-1 py-2 bg-surface-overlay hover:bg-surface-overlay rounded-xl text-sm font-semibold text-fg-subtle"
             >
               Cancel
             </button>

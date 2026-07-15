@@ -190,6 +190,17 @@ class AutopilotService:
                 "rationale_summary": rationale.get("summary"),
             },
         )
+        # Notify-out (aci_integration_tasks #5): per-type opt-in, fire-and-
+        # forget — a notification failure never affects this write. The
+        # approval decision itself stays inside dataPlane; the message only
+        # links back to the approval-queue UI.
+        from app.services.notification_service import dispatch_notify_out
+        dispatch_notify_out(
+            db, event_key=f"autopilot:{action_type}",
+            title=f"Autopilot recommendation pending approval: {action_type}",
+            body=f"{subject} — {rationale.get('summary', '')}"[:500],
+            link=f"{settings.DATAPLANE_BASE_URL}/dashboard/autopilot",
+        )
         return rec, True
 
     @staticmethod

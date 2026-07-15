@@ -44,12 +44,22 @@ class ConnectionService:
             raise HTTPException(status_code=409,
                                 detail=f"A connector named '{name}' already exists")
 
+        # Vaulting (keeperdb_integration_tasks #4): secret fields never land
+        # in the config column when the secret manager is configured; legacy
+        # mode (unconfigured) keeps them there, still redacted at the API.
+        from app.services import connection_secrets_service as secrets_svc
+        secrets: Dict[str, Any] = {}
+        if secrets_svc.vaulting_active():
+            cleaned, secrets = secrets_svc.extract_secret_fields(conn_type, cleaned)
+
         conn = DBConnection(name=name, type=conn_type, config=cleaned,
                             created_by=actor, updated_by=actor)
         db.add(conn)
         db.flush()
-        logger.info("[connectors] stage=create name=%s type=%s id=%d",
-                    conn.name, conn.type, conn.id)
+        if secrets:
+            secrets_svc.store_secrets_for_new_connection(db, conn, secrets, actor=actor)
+        logger.info("[connectors] stage=create name=%s type=%s id=%d vaulted=%s",
+                    conn.name, conn.type, conn.id, bool(secrets))
         record_audit(db, "connector_created", actor=actor,
                      connection_id=conn.id, connection_name=conn.name,
                      payload={"type": conn.type})
@@ -242,6 +252,10 @@ class ConnectionService:
                 detail=f"Connection has {dependents['total']} dependent resource(s); "
                        "remove them before hard-deleting",
             )
+        # Vault cleanup on hard delete only — soft-deleted connections keep
+        # their secrets_ref so restore keeps working (keeperdb tasks #4).
+        from app.services import connection_secrets_service as secrets_svc
+        secrets_svc.delete_secrets_for_connection(db, conn, actor=actor)
         logger.info("[connectors] stage=hard_delete id=%d name=%s", id, conn.name)
         record_audit(db, "connector_hard_deleted", actor=actor,
                      connection_id=conn.id, connection_name=conn.name)

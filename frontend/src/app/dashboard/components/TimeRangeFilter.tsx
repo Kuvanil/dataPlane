@@ -23,7 +23,7 @@ export function TimeRangeFilter({ value, onChange, disabled }: TimeRangeFilterPr
 
   return (
     <div
-      className="flex rounded-xl border border-zinc-700 overflow-hidden"
+      className="flex rounded-xl border border-border-strong overflow-hidden"
       role="radiogroup"
       aria-label="Time range"
     >
@@ -40,7 +40,7 @@ export function TimeRangeFilter({ value, onChange, disabled }: TimeRangeFilterPr
             className={`px-4 py-2 text-sm font-medium transition-colors ${
               isSelected
                 ? "bg-blue-600 text-white"
-                : "bg-zinc-900/50 text-zinc-400 hover:bg-zinc-800"
+                : "bg-surface-elevated text-fg-subtle hover:bg-surface-overlay"
             } ${disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
           >
             {opt.label}

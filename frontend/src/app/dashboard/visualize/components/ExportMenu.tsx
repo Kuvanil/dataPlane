@@ -41,16 +41,16 @@ export default function ExportMenu({ result, containerRef, chartType }: ExportMe
         type="button"
         onClick={() => setOpen((v) => !v)}
         disabled={disabled}
-        className="px-3 py-2 text-xs font-semibold text-zinc-300 border border-zinc-700 rounded-lg hover:bg-zinc-800/60 disabled:opacity-50"
+        className="px-3 py-2 text-xs font-semibold text-fg-muted border border-border-strong rounded-lg hover:bg-surface-overlay disabled:opacity-50"
       >
         Export ▾
       </button>
       {open && (
-        <div className="absolute right-0 mt-2 w-48 rounded-xl bg-zinc-900 border border-zinc-800 shadow-2xl z-40 p-1.5">
-          <button type="button" onClick={exportCsv} className="w-full text-left px-3 py-2 text-xs rounded-lg hover:bg-zinc-800/60 text-zinc-300">
+        <div className="absolute right-0 mt-2 w-48 rounded-xl bg-surface border border-border shadow-2xl z-40 p-1.5">
+          <button type="button" onClick={exportCsv} className="w-full text-left px-3 py-2 text-xs rounded-lg hover:bg-surface-overlay text-fg-muted">
             Export data as CSV
           </button>
-          <button type="button" onClick={exportPng} className="w-full text-left px-3 py-2 text-xs rounded-lg hover:bg-zinc-800/60 text-zinc-300">
+          <button type="button" onClick={exportPng} className="w-full text-left px-3 py-2 text-xs rounded-lg hover:bg-surface-overlay text-fg-muted">
             Export chart as PNG
           </button>
           {error && <p className="px-3 py-1 text-[11px] text-red-400">{error}</p>}

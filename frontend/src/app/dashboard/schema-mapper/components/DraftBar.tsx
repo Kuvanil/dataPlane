@@ -25,18 +25,18 @@ export default function DraftBar({ dirty, saving, lastSavedAt, error }: DraftBar
     tone = "bg-emerald-500/10 text-emerald-300 border-emerald-500/20";
   } else {
     label = "No edits yet";
-    tone = "bg-zinc-800 text-zinc-500 border-zinc-700";
+    tone = "bg-surface-overlay text-fg0 border-border-strong";
   }
   return (
     <div
-      className="px-5 py-1.5 border-b border-zinc-800 bg-zinc-900/20 flex items-center justify-between text-[11px]"
+      className="px-5 py-1.5 border-b border-border bg-surface-elevated flex items-center justify-between text-[11px]"
       role="status"
       aria-live="polite"
     >
       <span className={classNames("px-2 py-0.5 rounded border font-medium", tone)}>
         {label}
       </span>
-      <span className="text-zinc-500">
+      <span className="text-fg0">
         Autosave every 30s · also saves on tab hide
       </span>
     </div>

@@ -180,6 +180,119 @@ def _exec_migration_execute(db: Session, payload: Dict[str, Any],
     return {"run_id": run_id, DISPATCH_AFTER_COMMIT_KEY: _dispatch}
 
 
+def _audit_external_execution(db: Session, actor: str, action_type: str, *,
+                              destination: str, result: Dict[str, Any]) -> None:
+    """aci_integration_tasks #9: every executed external action is
+    reconstructable from dataPlane's own Audit Trail — app, destination,
+    outcome — without consulting ACI's logs."""
+    from app.services.audit_helper import emit_audit_event
+
+    success = bool(result.get("success", True))
+    emit_audit_event(
+        db, event_type="aci.external_action_executed", actor=actor,
+        module="aci_integration", target_type="external_action",
+        target_name=destination,
+        summary=f"{action_type} → {destination}",
+        outcome="success" if success else "failure",
+        metadata={"action_type": action_type, "destination": destination,
+                  "success": success, "error": result.get("error")},
+    )
+
+
+def _exec_notify_slack_internal(db: Session, payload: Dict[str, Any],
+                                actor: str) -> Dict[str, Any]:
+    """Post to the ONE pre-configured internal Slack channel (aci tasks #3).
+
+    Structurally enforces the fixed-destination rule: any channel in the
+    payload is IGNORED — the destination comes only from admin-set Settings.
+    That fixed, admin-controlled destination is what justifies this being
+    the sole auto-capable external action.
+    """
+    from app.core.config import settings
+    from app.services.aci_client_service import aci_client
+
+    channel = settings.ACI_SLACK_INTERNAL_CHANNEL
+    if not channel:
+        raise ValueError(
+            "notify_slack_internal is not configured "
+            "(ACI_SLACK_INTERNAL_CHANNEL is unset)"
+        )
+    text = payload["title"]
+    if payload.get("body"):
+        text += f"\n{payload['body']}"
+    if payload.get("link"):
+        text += f"\n{payload['link']}"
+    result = aci_client.execute_tool(
+        "SLACK__CHAT_POST_MESSAGE", {"channel": channel, "text": text})
+    return {"channel": channel, "success": bool(result.get("success", True))}
+
+
+def _exec_external_ticket_create(db: Session, payload: Dict[str, Any],
+                                 actor: str) -> Dict[str, Any]:
+    """Create a ticket/issue in an external tracker — approval-only: it
+    creates a persistent artifact in a system dataPlane doesn't own."""
+    from app.services.aci_client_service import aci_client
+
+    tool_name = payload.get("tool_name") or "GITHUB__CREATE_ISSUE"
+    result = aci_client.execute_tool(tool_name, {
+        "title": payload["title"], "body": payload["body"],
+        **(payload.get("tool_params") or {}),
+    })
+    _audit_external_execution(db, actor, "external_ticket_create",
+                              destination=tool_name, result=result)
+    return {"tool_name": tool_name, "success": bool(result.get("success", True)),
+            "data": result.get("data")}
+
+
+def _exec_external_message_send(db: Session, payload: Dict[str, Any],
+                                actor: str) -> Dict[str, Any]:
+    """Message an arbitrary (user-suppliable) channel/destination —
+    approval-only regardless of the verb's low inherent risk, because the
+    destination itself is part of the risk (aci tasks #3 crux rule)."""
+    from app.services.aci_client_service import aci_client
+
+    result = aci_client.execute_tool(
+        "SLACK__CHAT_POST_MESSAGE",
+        {"channel": payload["destination"], "text": payload["body"]})
+    _audit_external_execution(db, actor, "external_message_send",
+                              destination=payload["destination"], result=result)
+    return {"destination": payload["destination"],
+            "success": bool(result.get("success", True))}
+
+
+def _exec_external_email_send(db: Session, payload: Dict[str, Any],
+                              actor: str) -> Dict[str, Any]:
+    """Send an email via ACI — highest blast radius (could reach an
+    external, non-team recipient); approval-only, risk=high."""
+    from app.services.aci_client_service import aci_client
+
+    result = aci_client.execute_tool("GMAIL__SEND_EMAIL", {
+        "recipient": payload["to"], "subject": payload["subject"],
+        "body": payload["body"],
+    })
+    _audit_external_execution(db, actor, "external_email_send",
+                              destination=payload["to"], result=result)
+    return {"to": payload["to"], "success": bool(result.get("success", True))}
+
+
+def _exec_schema_design_create(db: Session, payload: Dict[str, Any],
+                               actor: str) -> Dict[str, Any]:
+    """Apply an approved Agentic DBA schema-design plan (agentic_dba_tasks #7).
+
+    Approval-only by construction (auto_capable=False, mirrors
+    migration_execute): reaching this executor means a human approved the
+    recommendation through the same admin-gated approval queue every other
+    approval-only action uses. Execution itself still goes through Query
+    Studio's existing write path inside the execution service — this
+    executor adds no second execution engine.
+    """
+    from app.services.agentic_dba_execution_service import approve_and_execute_plan
+
+    plan = approve_and_execute_plan(db, payload["plan_id"], actor=actor, role="admin")
+    return {"plan_id": plan.id, "status": plan.status,
+            "apply_results": plan.apply_results}
+
+
 # ── Registry + prohibited set ─────────────────────────────────────────────
 
 
@@ -225,6 +338,61 @@ ACTION_REGISTRY: Dict[str, ActionSpec] = {
             auto_capable=False,
             required_payload_keys=frozenset({"source_id", "target_id"}),
             execute=_exec_migration_execute,
+        ),
+        ActionSpec(
+            action_type="schema_design_create",
+            description="Apply an approved Agentic DBA schema-design plan (DDL via Query Studio's gated write path)",
+            risk="high",
+            reversible=False,
+            reversibility_note="NOT reversible: creates/alters real schema objects in the target database. Approval-only, mirroring migration_execute — never runs autonomously (agentic_dba_tasks design decision #1).",
+            auto_capable=False,
+            required_payload_keys=frozenset({"plan_id"}),
+            execute=_exec_schema_design_create,
+        ),
+        # ── External-system side effects (aci_integration_tasks #3) ───────
+        # Same allow-list/risk/reversibility model — NOT a new authorization
+        # dimension. Crux rule: an action whose destination is user- or
+        # LLM-suppliable at request time is never auto_capable, regardless
+        # of the verb's own risk — the destination is part of the risk.
+        ActionSpec(
+            action_type="notify_slack_internal",
+            description="Post a notification to the ONE pre-configured internal Slack channel (via ACI)",
+            risk="low",
+            reversible=True,
+            reversibility_note="A message to the fixed, admin-configured internal channel can be deleted/ignored; low blast radius because the destination is never user-suppliable (executor ignores any channel in the payload).",
+            auto_capable=True,
+            required_payload_keys=frozenset({"title"}),
+            execute=_exec_notify_slack_internal,
+        ),
+        ActionSpec(
+            action_type="external_message_send",
+            description="Send a message to a user-specified channel/destination (via ACI)",
+            risk="medium",
+            reversible=True,
+            reversibility_note="The message itself is deletable, but the destination is user-suppliable at request time — approval-only by the destination rule, never auto.",
+            auto_capable=False,
+            required_payload_keys=frozenset({"destination", "body"}),
+            execute=_exec_external_message_send,
+        ),
+        ActionSpec(
+            action_type="external_ticket_create",
+            description="Create a ticket/issue in an external tracker (Jira/GitHub/Linear via ACI)",
+            risk="medium",
+            reversible=False,
+            reversibility_note="Creates a persistent artifact in a system dataPlane doesn't own — approval-only.",
+            auto_capable=False,
+            required_payload_keys=frozenset({"title", "body"}),
+            execute=_exec_external_ticket_create,
+        ),
+        ActionSpec(
+            action_type="external_email_send",
+            description="Send an email to a specified recipient (via ACI)",
+            risk="high",
+            reversible=False,
+            reversibility_note="NOT reversible: could reach an external, non-team recipient — the highest-blast-radius external action. Approval-only.",
+            auto_capable=False,
+            required_payload_keys=frozenset({"to", "subject", "body"}),
+            execute=_exec_external_email_send,
         ),
     )
 }
